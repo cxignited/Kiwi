@@ -32,12 +32,6 @@ class BaseAPIClient_TestCase(StaticLiveServerTestCase):
     num_plans = 1
     num_runs = 1
 
-    def setUp(self):
-        # disable caching for every test to avoid hard to debug issues
-        # tests that need caching will enable it before they do
-        # anything else
-        tcms_api.config.set_cache_level(tcms_api.config.CACHE_NONE)
-
     # NOTE: we setup the required DB data and API objects here
     # because this method is executed *AFTER* setUpClass() and the
     # serialized rollback is not yet available during setUpClass()
@@ -46,9 +40,6 @@ class BaseAPIClient_TestCase(StaticLiveServerTestCase):
         # restore the serialized data from initial migrations
         # this includes default groups and permissions
         super(BaseAPIClient_TestCase, self)._fixture_setup()
-
-        # initial cache reset to avoid storing anything in cache
-        tcms_api.config.set_cache_level(tcms_api.config.CACHE_NONE)
 
         # reset connection to server b/c the address changes for
         # every test and the client caches this as a class attribute
@@ -76,74 +67,86 @@ password = %s
 """ % (self.live_server_url, self.api_user.username, 'testing'))
         conf_fh.close()
 
+        self.rpc_client = tcms_api.TCMS()._server
+
         # create the product first so we can fetch it via API
         f_product = ProductFactory()
-        self.product = tcms_api.Product(name=f_product.name)
+        self.product = self.rpc_client.Product.filter(name=f_product.name)[0]
+
         f_version = VersionFactory(product=f_product)
-        self.version = tcms_api.Version(product=self.product, version=f_version.value)
-        self.plantype = tcms_api.PlanType(name="Function")
+        self.version = self.rpc_client.Version.filter(product=self.product,
+                                                      version=f_version.value)[0]
+
+        self.plantype = self.rpc_client.PlanType.filter(name="Function")[0]
 
         CategoryFactory(name='Security', product=f_product)
         CategoryFactory(name='Sanity', product=f_product)
         f_category = CategoryFactory(product=f_product)
-        self.category = tcms_api.Category(category=f_category.name, product=self.product)
+        self.category = self.rpc_client.Category.filter(category=f_category.name,
+                                                        product=self.product)[0]
 
         f_component = ComponentFactory(product=f_product)
-        self.component = tcms_api.Component(name=f_component.name, product=self.product)
-        self.CASESTATUS = tcms_api.CaseStatus("CONFIRMED")
-        self.build = tcms_api.Build(product=self.product, build="unspecified")
+        self.component = self.rpc_client.Component.filter(name=f_component.name,
+                                                          product=self.product)[0]
+
+        self.CASESTATUS = self.rpc_client.TestCaseStatus.filter(name="CONFIRMED")[0]
+        self.build = self.rpc_client.Build.filter(product=self.product, build="unspecified")[0]
 
         f_tags = [TagFactory() for i in range(20)]
-        self.tags = [tcms_api.Tag(t.pk) for t in f_tags]
+        self.tags = [self.rpc_client.Tag.filter(pk=t.pk)[0] for t in f_tags]
 
         f_users = [UserFactory() for i in range(50)]
-        self.TESTERS = [tcms_api.User(u.pk) for u in f_users]
+        self.TESTERS = [self.rpc_client.User.filter(pk=u.pk)[0] for u in f_users]
 
         # Create test cases
         self.cases = []
         for case_count in range(self.num_cases):
-            testcase = tcms_api.TestCase(
-                category=self.category,
-                product=self.product,
+            testcase = self.rpc_client.TestCase.create(
+                category=self.category['pk'],
+                product=self.product['pk'],
                 summary="Test Case {0}".format(case_count + 1),
-                status=self.CASESTATUS)
+                status=self.CASESTATUS['pk'])
             # Add a couple of random tags and the default tester
-            testcase.tags.add([random.choice(self.tags) for counter in range(10)])  # nosec:B311
-            testcase.tester = random.choice(self.TESTERS)  # nosec:B311:blacklist
-            testcase.update()
+            for counter in range(10):
+                tag = random.choice(self.tags)  # nosec:B311:blacklist
+                self.rpc_client.TestCase.add_tag(testcase['pk'], tag['name'])
+
+            default_tester = random.choice(self.TESTERS)['pk']  # nosec:B311:blacklist
+            self.rpc_client.TestCase.update(default_tester=default_tester)
             self.cases.append(testcase)
 
         # Create master test plan (parent of all)
-        self.master = tcms_api.TestPlan(
+        self.master = self.rpc_client.TestPlan.create(
             name="API client Test Plan",
             text='Master TP created from API',
-            product=self.product,
-            version=self.version,
-            type=self.plantype)
-        self.master.owner = self.api_user
-        self.master.testcases.add(self.cases)
-        self.master.update()
+            product=self.product['pk'],
+            version=self.version['pk'],
+            type=self.plantype['pk'],
+            owner=self.api_user.pk)
+
+        for case in self.cases:
+            self.rpc_client.TestPlan.add_case(self.master['pk'], case['pk'])
 
         # Create child test plans
         self.testruns = []
         for plan_count in range(self.num_plans):
-            testplan = tcms_api.TestPlan(
+            testplan = self.rpc_client.TestPlan.create(
                 name="Test Plan {0}".format(plan_count + 1),
                 text='Child TP created from API',
-                product=self.product,
-                version=self.version,
-                parent=self.master,
-                type=self.plantype)
+                product=self.product['pk'],
+                version=self.version['pk'],
+                parent=self.master['pk'],
+                type=self.plantype['pk'])
             # Link all test cases to the test plan
-            testplan.testcases.add(self.cases)
-            testplan.update()
+            for case in self.cases:
+                self.rpc_client.TestPlan.add_case(testplan['pk'], case['pk'])
 
             # Create test runs
             for run_count in range(self.num_runs):
-                testrun = tcms_api.TestRun(
-                    testplan=testplan,
-                    build=self.build,
-                    product=self.product,
+                testrun = self.rpc_client.TestRun.create(
+                    testplan=testplan['pk'],
+                    build=self.build['pk'],
+                    product=self.product['pk'],
                     summary="Test Run {0}".format(run_count + 1),
                     version=self.version.name)
                 self.testruns.append(testrun)
