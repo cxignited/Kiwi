@@ -671,22 +671,14 @@ class TestCase(Mutable):
                       doc="Test case author.")
     created = property(_getter("created"),
                        doc="Test case creation date (datetime).")
-    tags = property(_getter("tags"),
-                    doc="Attached tags.")
     bugs = property(_getter("bugs"),
                     doc="Attached bugs.")
     testplans = property(_getter("testplans"),
                          doc="Test plans linked to this test case.")
     components = property(_getter("components"),
                           doc="Components related to this test case.")
-    setup = property(_getter("setup"),
-                     doc="Setup steps to prepare the machine for the test case.")
-    action = property(_getter("action"),
-                      doc="Actions to be performed.")
-    effect = property(_getter("effect"),
-                      doc="Expected Results to be measured.")
-    breakdown = property(_getter("breakdown"),
-                         doc="Breakdown steps to return machine to original state.")
+    tags = property(_getter("tags"),
+                    doc="Attached tags.")
 
     @property
     def synopsis(self):
@@ -725,6 +717,14 @@ class TestCase(Mutable):
                       doc="Default tester.")
     time = property(_getter("time"), _setter("time"),
                     doc="Estimated time.")
+    setup = property(_getter("setup"), _setter("setup"),
+                     doc="Setup steps to prepare the machine for the test case.")
+    action = property(_getter("action"), _setter("action"),
+                      doc="Actions to be performed.")
+    effect = property(_getter("effect"), _setter("effect"),
+                      doc="Expected Results to be measured.")
+    breakdown = property(_getter("breakdown"), _setter("breakdown"),
+                         doc="Breakdown steps to return machine to original state.")
 
     @classmethod
     def _cache_lookup(cls, id, **kwargs):
@@ -1010,6 +1010,12 @@ class TestCase(Mutable):
         hash["requirement"] = self.requirement
         hash["script"] = self.script
         hash["summary"] = self.summary
+
+        hash["setup"] = self.setup
+        hash["action"] = self.action
+        hash["effect"] = self.effect
+        hash["breakdown"] = self.breakdown
+
         if self.tester:
             hash["default_tester"] = self.tester.login
 
