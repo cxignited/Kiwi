@@ -31,6 +31,12 @@ Nitrate.TestPlans.Instance = {
 		author_id: {{ test_plan.author_id }},
 		parent: {{ test_plan.parent.pk|default:'null' }}
 	},
+	extras: {
+		num_cases: {{ test_plan.case.count }},
+		num_runs: {{ test_plan.run.count }},
+		num_children: {{ test_plan.child_set.count }},
+		get_full_url: '{{ test_plan.get_full_url }}'
+	}
 }
 </script>
 {% endblock %}
@@ -62,9 +68,6 @@ Nitrate.TestPlans.Instance = {
 			<input id="btn_print" type="button" value="Print Plan "
                    title="Print Plan"
                    data-params='["{% url "plans-printable" %}", {{ test_plan.pk }}]'>
-                    {% if perms.testplans.delete_testplan %}
-                        <a href="{% url 'admin:testplans_testplan_delete' test_plan.pk %}"><strong>DELETE PLAN<strong></a>
-                    {% endif %}
 		</span>
 	</div>
 	<h2 id="display_title" class="{% ifequal test_plan.is_active 0 %}line-through{% endifequal %}">

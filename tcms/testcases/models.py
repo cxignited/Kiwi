@@ -59,8 +59,9 @@ class TestCaseStatus(TCMSActionModel):
     description = models.TextField(null=True, blank=True)
 
     class Meta:
+        db_table = u'test_case_status'
         verbose_name = "Test case status"
-        verbose_name_plural = "Test case statuses"
+        verbose_name_plural = "Test case status"
 
     def __str__(self):
         return self.name
@@ -99,6 +100,7 @@ class Category(TCMSActionModel):
     description = models.TextField(blank=True)
 
     class Meta:
+        db_table = u'test_case_categories'
         verbose_name_plural = u'test case categories'
         unique_together = ('product', 'name')
 
@@ -148,8 +150,10 @@ class TestCase(TCMSActionModel):
     tag = models.ManyToManyField('management.Tag', related_name='case',
                                  through='testcases.TestCaseTag')
 
-    # todo: Auto-generated attributes from back-references:
+    # Auto-generated attributes from back-references:
     # 'texts' : list of TestCaseTexts (from TestCaseTexts.case)
+    class Meta:
+        db_table = u'test_cases'
 
     def __str__(self):
         return self.summary
@@ -368,31 +372,44 @@ class TestCase(TCMSActionModel):
             breakdown,
             author=None,
             create_date=datetime.now(),
-            case_text_version=1):
+            case_text_version=1,
+            action_checksum=None,
+            effect_checksum=None,
+            setup_checksum=None,
+            breakdown_checksum=None):
         if not author:
             author = self.author
 
-        new_checksum = checksum(action + effect + setup + breakdown)
-        latest_text = self.latest_text()
-        old_checksum = checksum(latest_text.action +
-                                latest_text.effect +
-                                latest_text.setup +
-                                latest_text.breakdown)
+        new_action_checksum = checksum(action)
+        new_effect_checksum = checksum(effect)
+        new_setup_checksum = checksum(setup)
+        new_breakdown_checksum = checksum(breakdown)
 
-        if old_checksum == new_checksum:
-            return latest_text
+        old_action, old_effect, old_setup, old_breakdown = self.text_checksum()
+        if old_action != new_action_checksum \
+                or old_effect != new_effect_checksum \
+                or old_setup != new_setup_checksum \
+                or old_breakdown != new_breakdown_checksum:
+            case_text_version = self.latest_text_version() + 1
 
-        case_text_version = self.latest_text_version() + 1
-        return TestCaseText.objects.create(
-            case=self,
-            case_text_version=case_text_version,
-            create_date=create_date,
-            author=author,
-            action=action,
-            effect=effect,
-            setup=setup,
-            breakdown=breakdown
-        )
+            latest_text = TestCaseText.objects.create(
+                case=self,
+                case_text_version=case_text_version,
+                create_date=create_date,
+                author=author,
+                action=action,
+                effect=effect,
+                setup=setup,
+                breakdown=breakdown,
+                action_checksum=action_checksum or new_action_checksum,
+                effect_checksum=effect_checksum or new_effect_checksum,
+                setup_checksum=setup_checksum or new_setup_checksum,
+                breakdown_checksum=breakdown_checksum or new_breakdown_checksum
+            )
+        else:
+            latest_text = self.latest_text()
+
+        return latest_text
 
     def add_to_plan(self, plan):
         TestCasePlan.objects.get_or_create(case=self, plan=plan)
@@ -464,6 +481,23 @@ class TestCase(TCMSActionModel):
         qs = self.text.order_by('-case_text_version').only('case_text_version')[0:1]
         return 0 if len(qs) == 0 else qs[0].case_text_version
 
+    def text_exist(self):
+        return self.text.exists()
+
+    def text_checksum(self):
+        qs = self.text.order_by('-case_text_version').only('action_checksum',
+                                                           'effect_checksum',
+                                                           'setup_checksum',
+                                                           'breakdown_checksum')[0:1]
+        if len(qs) == 0:
+            return None, None, None, None
+        else:
+            text = qs[0]
+            return (text.action_checksum,
+                    text.effect_checksum,
+                    text.setup_checksum,
+                    text.breakdown_checksum)
+
     def mail(self, template, subject, context={}, to=[], request=None):
         from tcms.core.utils.mailto import mailto
 
@@ -517,8 +551,13 @@ class TestCaseText(TCMSActionModel):
     effect = models.TextField(blank=True)
     setup = models.TextField(blank=True)
     breakdown = models.TextField(blank=True)
+    action_checksum = models.CharField(max_length=64)
+    effect_checksum = models.CharField(max_length=64)
+    setup_checksum = models.CharField(max_length=64)
+    breakdown_checksum = models.CharField(max_length=64)
 
     class Meta:
+        db_table = u'test_case_texts'
         ordering = ['case', '-case_text_version']
         unique_together = ('case', 'case_text_version')
 
@@ -540,6 +579,7 @@ class TestCasePlan(models.Model):
     # in database.
 
     class Meta:
+        db_table = u'test_case_plans'
         unique_together = ('plan', 'case')
 
 
@@ -547,11 +587,17 @@ class TestCaseComponent(models.Model):
     case = models.ForeignKey(TestCase, on_delete=models.CASCADE)  # case_id
     component = models.ForeignKey('management.Component', on_delete=models.CASCADE)  # component_id
 
+    class Meta:
+        db_table = u'test_case_components'
+
 
 class TestCaseTag(models.Model):
     tag = models.ForeignKey('management.Tag', on_delete=models.CASCADE)
     case = models.ForeignKey(TestCase, on_delete=models.CASCADE)
     user = models.IntegerField(db_column='userid', default='0')
+
+    class Meta:
+        db_table = u'test_case_tags'
 
 
 class BugSystem(TCMSActionModel):
@@ -645,6 +691,7 @@ Leave empty to disable!
         verbose_name='API password or token')
 
     class Meta:
+        db_table = u'test_case_bug_systems'
         verbose_name = 'Bug tracker'
         verbose_name_plural = 'Bug trackers'
 
@@ -666,6 +713,7 @@ class Bug(TCMSActionModel):
     description = models.TextField(blank=True, null=True)
 
     class Meta:
+        db_table = u'test_case_bugs'
         unique_together = (('bug_id', 'case_run', 'case'),
                            ('bug_id', 'case_run'))
 
@@ -702,6 +750,7 @@ class Contact(TCMSContentTypeBaseModel):
         return self.name
 
     class Meta:
+        db_table = u'tcms_contacts'
         index_together = (('content_type', 'object_pk', 'site'),)
 
     @classmethod

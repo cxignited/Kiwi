@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+from datetime import datetime
+
 from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
@@ -27,6 +29,7 @@ class PlanType(TCMSActionModel):
         return self.name
 
     class Meta:
+        db_table = u'test_plan_types'
         ordering = ['name']
 
 
@@ -55,6 +58,7 @@ class TestPlan(TCMSActionModel):
                                  related_name='plan')
 
     class Meta:
+        db_table = u'test_plans'
         index_together = [['product', 'plan_id']]
 
     def __str__(self):
@@ -95,22 +99,56 @@ class TestPlan(TCMSActionModel):
 
     def latest_text(self):
         try:
-            return self.text.select_related('author').order_by('-pk')[0]
+            return self.text.select_related('author').order_by(
+                '-plan_text_version')[0]
         except IndexError:
             return None
         except ObjectDoesNotExist:
             return None
 
-    def add_text(self, author, plan_text):
-        latest_text = self.latest_text()
-        old_checksum = None
-        if latest_text is not None:
-            old_checksum = checksum(latest_text.plan_text)
+    def text_exist(self):
+        try:
+            return self.text.exists()
+        except IndexError:
+            return False
+        except ObjectDoesNotExist:
+            return False
 
-        if old_checksum == checksum(plan_text):
-            return self.latest_text()
+    def text_checksum(self):
+        try:
+            return self.text.order_by('-plan_text_version').only(
+                'checksum')[0].checksum
+        except IndexError:
+            return None
+        except ObjectDoesNotExist:
+            return None
 
-        return self.text.create(author=author, plan_text=plan_text)
+    def add_text(self,
+                 author,
+                 plan_text,
+                 create_date=datetime.now(),
+                 plan_text_version=None,
+                 text_checksum=None):
+        if not plan_text_version:
+            latest_text = self.latest_text()
+            if latest_text:
+                plan_text_version = latest_text.plan_text_version + 1
+            else:
+                plan_text_version = 1
+
+        if not text_checksum:
+            old_checksum = self.text_checksum()
+            new_checksum = checksum(plan_text)
+            if old_checksum == new_checksum:
+                return self.latest_text()
+
+        return self.text.create(
+            plan_text_version=plan_text_version,
+            author=author,
+            create_date=create_date,
+            plan_text=plan_text,
+            checksum=text_checksum or checksum(plan_text)
+        )
 
     def add_case(self, case, sortkey=0):
 
@@ -222,9 +260,15 @@ class TestPlan(TCMSActionModel):
 
         # Copy the plan documents
         if copy_texts:
-            latest_text = self.latest_text()
-            if latest_text is not None:
-                tp_dest.add_text(latest_text.author, latest_text.plan_text)
+            tptxts_src = self.text.all()
+            for tptxt_src in tptxts_src:
+                tp_dest.add_text(
+                    plan_text_version=tptxt_src.plan_text_version,
+                    author=tptxt_src.author,
+                    create_date=tptxt_src.create_date,
+                    plan_text=tptxt_src.plan_text)
+        else:
+            tp_dest.add_text(author=default_text_author, plan_text='')
 
         # Copy the plan tags
         for tp_tag_src in self.tag.all():
@@ -299,19 +343,26 @@ class TestPlan(TCMSActionModel):
 
 class TestPlanText(TCMSActionModel):
     plan = models.ForeignKey(TestPlan, related_name='text', on_delete=models.CASCADE)
+    plan_text_version = models.IntegerField()
     author = models.ForeignKey(settings.AUTH_USER_MODEL, db_column='who', on_delete=models.CASCADE)
     create_date = models.DateTimeField(auto_now_add=True,
                                        db_column='creation_ts')
     plan_text = models.TextField(blank=True)
+    checksum = models.CharField(max_length=64)
 
     class Meta:
-        ordering = ['plan', '-pk']
+        db_table = u'test_plan_texts'
+        ordering = ['plan', '-plan_text_version']
+        unique_together = ('plan', 'plan_text_version')
 
 
 class TestPlanTag(models.Model):
     tag = models.ForeignKey('management.Tag', on_delete=models.CASCADE)
     plan = models.ForeignKey(TestPlan, on_delete=models.CASCADE)
     user = models.IntegerField(default="1", db_column='userid')
+
+    class Meta:
+        db_table = u'test_plan_tags'
 
 
 class TestPlanEmailSettings(models.Model):
@@ -328,3 +379,6 @@ class TestPlanEmailSettings(models.Model):
 class EnvPlanMap(models.Model):
     plan = models.ForeignKey(TestPlan, on_delete=models.CASCADE)
     group = models.ForeignKey('management.EnvGroup', on_delete=models.CASCADE)
+
+    class Meta:
+        db_table = u'tcms_env_plan_map'

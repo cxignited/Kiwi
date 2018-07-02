@@ -11,5 +11,6 @@ Submodules
 
 .. toctree::
 
+   tcms.core.helpers.cache
    tcms.core.helpers.comments
 

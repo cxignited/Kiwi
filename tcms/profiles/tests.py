@@ -86,7 +86,9 @@ class TestOpenBookmarks(TestCase):
             username=self.tester.username,
             password='password')
 
-        response = self.client.get(reverse('tcms-bookmarks'))
+        url = reverse('tcms-bookmark',
+                      kwargs={'username': self.tester.username})
+        response = self.client.get(url)
 
         checkbox_fmt = '<input name="pk" value="{}" type="checkbox" />'
 

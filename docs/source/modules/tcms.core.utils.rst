@@ -13,5 +13,6 @@ Submodules
 
    tcms.core.utils.checksum
    tcms.core.utils.mailto
+   tcms.core.utils.raw_sql
    tcms.core.utils.validations
 

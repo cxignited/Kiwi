@@ -2,7 +2,7 @@
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.urls import reverse
-from django.db.models import Count, OuterRef, Subquery
+from django.db.models import Count
 from django.http import Http404
 from django.shortcuts import render
 from django.views.generic import TemplateView
@@ -12,6 +12,7 @@ from .forms import CustomSearchDetailsForm
 from tcms.management.models import Priority
 from tcms.management.models import Product
 from tcms.testruns.models import TestRun, TestCaseRunStatus, TestCaseRun
+from tcms.core.utils.raw_sql import ReportSQL as RawSQL
 from tcms.report.forms import TestingReportForm
 from tcms.report.forms import TestingReportCaseRunsListForm
 from tcms.report.data import CustomDetailsReportData
@@ -32,12 +33,13 @@ from tcms.search import fmt_queries, remove_from_request_path
 
 def overall(request, template_name='report/list.html'):
     """Overall of products report"""
-    cases_count_query = Product.objects.filter(pk=OuterRef('pk')) \
-                                       .annotate(cases_num=Count('plan__case')) \
-                                       .values('cases_num')
-    products = Product.objects.annotate(plans_count=Count('plan', distinct=True),
-                                        runs_count=Count('plan__run', distinct=True),
-                                        cases_count=Subquery(cases_count_query))
+    products = Product.objects.all()
+
+    products = products.extra(select={
+        'plans_count': RawSQL.index_product_plans_count,
+        'runs_count': RawSQL.index_product_runs_count,
+        'cases_count': RawSQL.index_product_cases_count,
+    })
 
     context_data = {
         'products': products
@@ -585,7 +587,7 @@ class TestingReportCaseRuns(TestingReportBase, TestingReportCaseRunsData):
         if form.is_valid():
             test_case_runs = self.get_case_runs(form)
             status_names = TestCaseRunStatus.get_names()
-            priority_values = dict(Priority.objects.values_list('pk', 'value'))
+            priority_values = Priority.get_values()
 
             testers_ids, assignees_ids = self._get_testers_assignees_ids(
                 test_case_runs)
@@ -617,7 +619,6 @@ class TestingReportCaseRuns(TestingReportBase, TestingReportCaseRunsData):
 
     def walk_case_runs(self, case_runs, status_names, priority_values,
                        testers, assignees):
-        # todo: this is the same method as in testruns/views.py
         for case_run in case_runs:
             status_name = status_names[case_run.case_run_status_id]
             priority_value = priority_values[case_run.case.priority_id]

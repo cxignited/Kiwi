@@ -54,8 +54,7 @@ clean:
 apidoc:
 	$(SPHINXAPIDOC) -o source/modules/ -f -e -M -T ../ ../manage.py ../setup.py \
 	                ../*/tests.py ../*/tests/*.py ../*/test_*.py ../*/apps.py \
-	                ../settings/test/*.py ../*/migrations/*.py ../tcms_api/setup.py \
-	                ../kiwi_lint/*.py
+	                ../settings/test/*.py ../*/migrations/*.py ../tcms_api/setup.py
 
 html: clean apidoc
 	$(SPHINXBUILD) -b html $(ALLSPHINXOPTS) $(BUILDDIR)/html

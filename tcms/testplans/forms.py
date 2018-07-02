@@ -338,6 +338,7 @@ class ClonePlanForm(BasePlanForm):
     )
     copy_texts = forms.BooleanField(
         label='Copy Plan Document',
+        help_text='Check it to copy texts of the plan.',
         required=False,
     )
     copy_environment_group = forms.BooleanField(

@@ -560,6 +560,7 @@ class TestingReportBaseData(object):
     }
 
     def _filter_query(self, form, query):
+        """cache criteria to avoid generating repeately"""
         for field, condition in self.report_criteria.items():
             param = form.cleaned_data[field]
             if param:
