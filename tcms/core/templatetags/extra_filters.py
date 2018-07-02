@@ -5,17 +5,6 @@ from django.contrib.messages import constants as messages
 register = template.Library()
 
 
-@register.filter(name='smart_int')
-def smart_int(obj):
-    if not obj:
-        return obj
-
-    try:
-        return int(obj)
-    except ValueError:
-        return obj
-
-
 @register.filter(name='message_icon')
 def message_icon(msg):
     """

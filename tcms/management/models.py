@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 
-from django.core.cache import cache
 from django.db import models
 from django.conf import settings
 
@@ -38,9 +37,6 @@ class Classification(TCMSActionModel):
     description = models.TextField(blank=True)
     sortkey = models.IntegerField(default=0)
 
-    class Meta:
-        db_table = u'classifications'
-
     def __str__(self):
         return self.name
 
@@ -50,9 +46,6 @@ class Product(TCMSActionModel):
     name = models.CharField(unique=True, max_length=64)
     classification = models.ForeignKey(Classification, on_delete=models.CASCADE)
     description = models.TextField(blank=True)
-
-    class Meta:
-        db_table = u'products'
 
     def __str__(self):
         return self.name
@@ -110,26 +103,10 @@ class Priority(TCMSActionModel):
     is_active = models.BooleanField(db_column='isactive', default=True)
 
     class Meta:
-        db_table = u'priority'
         verbose_name_plural = u'priorities'
 
     def __str__(self):
         return self.value
-
-    cache_key_values = 'priority__value'
-
-    @classmethod
-    def get_values(cls):
-        values = cache.get(cls.cache_key_values)
-        if values is None:
-            values = dict(cls.objects.values_list('pk', 'value').iterator())
-            cache.set(cls.cache_key_values, values)
-        return values
-
-    def save(self, *args, **kwargs):
-        result = super(Priority, self).save(*args, **kwargs)
-        cache.delete(self.cache_key_values)
-        return result
 
 
 class Component(TCMSActionModel):
@@ -157,7 +134,6 @@ class Component(TCMSActionModel):
     #   'cases' : list of TestCases (from TestCases.components)
 
     class Meta:
-        db_table = u'components'
         unique_together = ('product', 'name')
 
     def __str__(self):
@@ -170,7 +146,6 @@ class Version(TCMSActionModel):
     product = models.ForeignKey(Product, related_name='version', on_delete=models.CASCADE)
 
     class Meta:
-        db_table = u'versions'
         unique_together = ('product', 'value')
 
     def __str__(self):
@@ -196,7 +171,6 @@ class Build(TCMSActionModel):
     is_active = models.BooleanField(db_column='isactive', default=True)
 
     class Meta:
-        db_table = u'test_builds'
         unique_together = ('product', 'name')
         verbose_name = u'build'
         verbose_name_plural = u'builds'
@@ -240,7 +214,6 @@ class Tag(TCMSActionModel):
     name = models.CharField(db_column='tag_name', max_length=255)
 
     class Meta:
-        db_table = u'test_tags'
         verbose_name = u'tag'
         verbose_name_plural = u'tags'
 
@@ -274,9 +247,6 @@ class EnvGroup(TCMSActionModel):
         related_name='group'
     )
 
-    class Meta:
-        db_table = u'tcms_env_groups'
-
     def __str__(self):
         return self.name
 
@@ -288,9 +258,6 @@ class EnvGroup(TCMSActionModel):
 class EnvProperty(TCMSActionModel):
     name = models.CharField(unique=True, max_length=255)
     is_active = models.BooleanField(default=True)
-
-    class Meta:
-        db_table = u'tcms_env_properties'
 
     def __str__(self):
         return self.name
@@ -304,9 +271,6 @@ class EnvGroupPropertyMap(models.Model):
     group = models.ForeignKey(EnvGroup, on_delete=models.CASCADE)
     property = models.ForeignKey(EnvProperty, on_delete=models.CASCADE)
 
-    class Meta:
-        db_table = u'tcms_env_group_property_map'
-
 
 class EnvValue(TCMSActionModel):
     value = models.CharField(max_length=255)
@@ -314,7 +278,6 @@ class EnvValue(TCMSActionModel):
     is_active = models.BooleanField(default=True)
 
     class Meta:
-        db_table = u'tcms_env_values'
         unique_together = ('property', 'value')
         ordering = ['property__name', 'value']
 

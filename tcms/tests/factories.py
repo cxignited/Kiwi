@@ -12,7 +12,6 @@ from tcms.management.models import Priority
 from tcms.testcases.models import TestCaseStatus
 from tcms.testcases.models import BugSystem
 from tcms.testruns.models import TestCaseRunStatus
-from tcms.core.utils.checksum import checksum
 
 
 # ### Factories for app management ###
@@ -219,11 +218,9 @@ class TestPlanTextFactory(DjangoModelFactory):
         model = 'testplans.TestPlanText'
 
     plan = factory.SubFactory(TestPlanFactory)
-    plan_text_version = 1
     author = factory.SubFactory(UserFactory)
     create_date = factory.LazyFunction(datetime.now)
     plan_text = factory.Sequence(lambda n: 'Plan text %d' % n)
-    checksum = factory.LazyAttribute(lambda obj: checksum(obj.plan_text))
 
 
 class TestPlanEmailSettingsFactory(DjangoModelFactory):
@@ -327,10 +324,6 @@ class TestCaseTextFactory(DjangoModelFactory):
     effect = 'effect'
     setup = 'setup'
     breakdown = 'breakdown'
-    action_checksum = factory.LazyAttribute(lambda obj: checksum(obj.action))
-    effect_checksum = factory.LazyAttribute(lambda obj: checksum(obj.effect))
-    setup_checksum = factory.LazyAttribute(lambda obj: checksum(obj.setup))
-    breakdown_checksum = factory.LazyAttribute(lambda obj: checksum(obj.breakdown))
 
 
 class BugFactory(DjangoModelFactory):
@@ -371,7 +364,6 @@ class TestRunFactory(DjangoModelFactory):
 
     summary = factory.Sequence(lambda n: 'Test run summary %d' % n)
     product_version = factory.SubFactory(VersionFactory)
-    plan_text_version = 1
     stop_date = None
     notes = ''
     plan = factory.SubFactory(TestPlanFactory)
@@ -419,7 +411,7 @@ class TestCaseRunFactory(DjangoModelFactory):
     sortkey = factory.Sequence(lambda n: n)
     run = factory.SubFactory(TestRunFactory)
     case = factory.SubFactory(TestCaseFactory)
-    case_run_status = factory.LazyFunction(lambda: TestCaseRunStatus.objects.all()[0:1][0])
+    case_run_status = factory.LazyFunction(lambda: TestCaseRunStatus.objects.order_by('pk').first())
     build = factory.SubFactory(BuildFactory)
 
 

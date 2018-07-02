@@ -24,9 +24,7 @@ from django.views.generic import View
 from uuslug import slugify
 
 from tcms.core.models import TCMSLog
-from tcms.core.utils.checksum import checksum
 from tcms.core.utils import DataTableResult
-from tcms.core.utils.raw_sql import RawSQL
 from tcms.management.models import EnvGroup
 from tcms.search import remove_from_request_path
 from tcms.search.order import order_plan_queryset
@@ -87,7 +85,7 @@ def new(request, template_name='plan/new.html'):
 
             # Add test plan text
             if request.user.has_perm('testplans.add_testplantext'):
-                test_plan.add_text(author=request.user, plan_text=form.cleaned_data['text'])
+                test_plan.add_text(request.user, form.cleaned_data['text'])
 
             # Add test plan environment groups
             if request.user.has_perm('testplans.add_envplanmap'):
@@ -150,11 +148,9 @@ def get_all(request, template_name='plan/all.html'):
             # The cleanest way I can find to get it into one query is to
             # use QuerySet.extra()
             # See http://docs.djangoproject.com/en/dev/ref/models/querysets
-            tps = tps.extra(select={
-                'num_cases': RawSQL.num_cases,
-                'num_runs': RawSQL.num_runs,
-                'num_children': RawSQL.num_plans,
-            })
+            tps = tps.annotate(num_cases=Count('case', distinct=True),
+                               num_runs=Count('run', distinct=True),
+                               num_children=Count('child_set', distinct=True))
             tps = order_plan_queryset(tps, order_by, asc)
     else:
         # Set search active plans only by default
@@ -469,13 +465,7 @@ def edit(request, plan_id, template_name='plan/edit.html'):
                 test_plan.save()
 
             if request.user.has_perm('testplans.add_testplantext'):
-                new_text = form.cleaned_data['text']
-                text_checksum = checksum(new_text)
-
-                if not test_plan.text_exist() or text_checksum != test_plan.text_checksum():
-                    test_plan.add_text(author=request.user,
-                                       plan_text=new_text,
-                                       text_checksum=text_checksum)
+                test_plan.add_text(request.user, form.cleaned_data['text'])
 
             if request.user.has_perm('testplans.change_envplanmap'):
                 test_plan.clear_env_groups()
@@ -663,22 +653,20 @@ def attachment(request, plan_id, template_name='plan/attachment.html'):
 
 
 @require_GET
-def text_history(request, plan_id, template_name='plan/history.html'):
+def text_history(request, plan_id):
     """View test plan text history"""
 
     test_plan = get_object_or_404(TestPlan, plan_id=int(plan_id))
     test_plan_texts = test_plan.text.select_related('author').only('plan',
                                                                    'create_date',
                                                                    'plan_text',
-                                                                   'plan_text_version',
                                                                    'author__email')
-    selected_plan_text_version = int(request.GET.get('plan_text_version', 0))
     context_data = {
         'testplan': test_plan,
         'test_plan_texts': test_plan_texts,
-        'select_plan_text_version': selected_plan_text_version,
+        'selected_text_version': int(request.GET.get('id', 0)),
     }
-    return render(request, template_name, context_data)
+    return render(request, 'plan/history.html', context_data)
 
 
 class ReorderCasesView(View):

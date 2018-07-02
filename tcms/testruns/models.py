@@ -36,7 +36,6 @@ class TestRun(TCMSActionModel):
 
     product_version = models.ForeignKey('management.Version', related_name='version_run',
                                         on_delete=models.CASCADE)
-    plan_text_version = models.IntegerField()
 
     start_date = models.DateTimeField(auto_now_add=True, db_index=True)
     stop_date = models.DateTimeField(null=True, blank=True, db_index=True)
@@ -67,8 +66,7 @@ class TestRun(TCMSActionModel):
     auto_update_run_status = models.BooleanField(default=False)
 
     class Meta:
-        db_table = u'test_runs'
-        unique_together = ('run_id', 'product_version', 'plan_text_version')
+        unique_together = ('run_id', 'product_version')
 
     def __str__(self):
         return self.summary
@@ -312,10 +310,6 @@ class TestRun(TCMSActionModel):
                                          failure_percent)
 
 
-# FIXME: replace TestCaseRunStatus' internal cache with Django's cache
-# machanism
-
-
 class TestCaseRunStatus(TCMSActionModel):
     complete_status_names = ('PASSED', 'ERROR', 'FAILED', 'WAIVED')
     failure_status_names = ('ERROR', 'FAILED')
@@ -323,12 +317,6 @@ class TestCaseRunStatus(TCMSActionModel):
 
     id = models.AutoField(db_column='case_run_status_id', primary_key=True)
     name = models.CharField(max_length=60, blank=True, unique=True)
-    sortkey = models.IntegerField(null=True, blank=True, default=0)
-    description = models.TextField(null=True, blank=True)
-    auto_blinddown = models.BooleanField(default=True)
-
-    class Meta:
-        db_table = u'test_case_run_status'
 
     def __str__(self):
         return self.name
@@ -424,7 +412,6 @@ class TestCaseRun(TCMSActionModel):
     environment_id = models.IntegerField(default=0)
 
     class Meta:
-        db_table = u'test_case_runs'
         unique_together = ('case', 'run', 'case_text_version')
 
     def links(self):
@@ -520,22 +507,15 @@ class TestRunTag(models.Model):
     run = models.ForeignKey(TestRun, related_name='tags', on_delete=models.CASCADE)
     user = models.IntegerField(db_column='userid', default='0')
 
-    class Meta:
-        db_table = u'test_run_tags'
-
 
 class TestRunCC(models.Model):
     run = models.ForeignKey(TestRun, related_name='cc_list', on_delete=models.CASCADE)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, db_column='who', on_delete=models.CASCADE)
 
     class Meta:
-        db_table = u'test_run_cc'
         unique_together = ('run', 'user')
 
 
 class EnvRunValueMap(models.Model):
     run = models.ForeignKey(TestRun, on_delete=models.CASCADE)
     value = models.ForeignKey('management.EnvValue', on_delete=models.CASCADE)
-
-    class Meta:
-        db_table = u'tcms_env_run_value_map'

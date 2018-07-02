@@ -6,19 +6,18 @@ Advance search implementations
 
 import time
 
+from django.db.models import Count
 from django.db.models.query import QuerySet
 from django.http import HttpRequest
 from django.shortcuts import render
 from django.views.decorators.http import require_GET
 
-from tcms.core.helpers.cache import cached_entities
-from tcms.core.utils.raw_sql import RawSQL
-from tcms.management.models import Priority
+from tcms.management.models import Priority, Product
 from tcms.search.forms import CaseForm, RunForm, PlanForm
 from tcms.search.order import order_targets
 from tcms.search.query import SmartDjangoQuery
 from tcms.testcases.models import TestCase
-from tcms.testplans.models import TestPlan
+from tcms.testplans.models import TestPlan, PlanType
 from tcms.testruns.models import TestRun
 
 
@@ -43,9 +42,9 @@ def advance_search(request):
 
     if errors or not data:
         product_choice = []
-        for product in cached_entities('product'):
+        for product in Product.objects.all():
             product_choice.append((product.pk, product.name))
-        plan_type_choices = cached_entities('plantype')  # pylint: disable=unused-variable
+        plan_type_choices = PlanType.objects.all()  # pylint: disable=unused-variable
         errors = _fmt_errors(errors)
         priorities = Priority.objects.filter(  # pylint: disable=unused-variable
             is_active=True).order_by('value')
@@ -101,11 +100,8 @@ def _sum_orm_queries(plans, cases, runs, target):
             plans = plans.filter(case__in=cases).distinct()
         if runs:
             plans = plans.filter(run__in=runs).distinct()
-        plans = plans.extra(select={
-            'num_cases': RawSQL.num_cases,
-            'num_runs': RawSQL.num_runs,
-            'num_children': RawSQL.num_plans,
-        })
+        plans = plans.annotate(num_cases=Count('case', distinct=True),
+                               num_runs=Count('run', distinct=True))
         return plans
     if target == 'case':
         if not plans and not runs:

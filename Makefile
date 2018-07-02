@@ -52,7 +52,7 @@ test:
 	fi
 
 .PHONY: check
-check: flake8 test check-mo-files
+check: flake8 test
 
 .PHONY: pylint
 pylint:
@@ -78,18 +78,9 @@ etags:
 	@ctags -R -e --languages=Python,CSS,Javascript --python-kinds=-im \
 		--exclude=build --exclude=tcms/static/js/lib -f TAGS
 
-ifeq ($(DOCKER_ORG),)
-  DOCKER_ORG='kiwitcms'
-endif
-
-ifeq ($(KIWI_VERSION),)
-    KIWI_VERSION=$(shell cat tcms/__init__.py | grep __version__ | cut -f2 -d"'")
-endif
-
 docker-image:
 	find -name "*.pyc" -delete
-	docker build -t $(DOCKER_ORG)/kiwi:$(KIWI_VERSION) .
-	docker tag $(DOCKER_ORG)/kiwi:$(KIWI_VERSION) $(DOCKER_ORG)/kiwi:latest
+	docker build -t kiwitcms/kiwi:latest .
 
 run:
 	docker-compose up
@@ -110,17 +101,6 @@ check-docs-source-in-git: docs
 	    git diff; \
 	    echo "FAIL: unmerged docs changes. Pobably auto-generated!"; \
 	    echo "HELP: execute 'make docs' and commit to fix this"; \
-	    exit 1; \
-	fi
-
-# verify all .mo files have been compiled and up-to-date!
-.PHONY: check-mo-files
-check-mo-files:
-	./manage.py compilemessages
-	git status
-	if [ -n "$$(git status --short)" ]; then \
-	    echo "FAIL: Out-of-date .mo files!"; \
-	    echo "HELP: execute './manage.py compilemessages' and commit to fix this"; \
 	    exit 1; \
 	fi
 

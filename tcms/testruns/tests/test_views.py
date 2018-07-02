@@ -180,7 +180,6 @@ class TestCreateNewRun(BasePlanCase):
         self.assertEqual(self.version, new_run.product_version)
         self.assertEqual(None, new_run.stop_date)
         self.assertEqual('Clone new run', new_run.notes)
-        self.assertEqual(0, new_run.plan_text_version)
         self.assertEqual(timedelta(0), new_run.estimated_time)
         self.assertEqual(self.build_fast, new_run.build)
         self.assertEqual(self.tester, new_run.manager)
@@ -791,8 +790,6 @@ class TestEnvValue(BaseCaseRun):
         user_should_have_perm(cls.tester, 'testruns.delete_envrunvaluemap')
 
     def test_refuse_if_action_is_unknown(self):
-        self.login_tester()
-
         response = self.client.get(self.env_value_url, {
             'env_value_id': self.value_bsd,
             'run_id': self.test_run.pk
@@ -803,8 +800,6 @@ class TestEnvValue(BaseCaseRun):
             {'rc': 1, 'response': 'Unrecognizable actions'})
 
     def test_add_env_value(self):
-        self.login_tester()
-
         self.client.get(self.env_value_url, {
             'a': 'add',
             'env_value_id': self.value_bsd.pk,
@@ -815,8 +810,6 @@ class TestEnvValue(BaseCaseRun):
         self.assertTrue(rel.exists())
 
     def test_add_env_value_to_runs(self):
-        self.login_tester()
-
         self.client.get(self.env_value_url, {
             'a': 'add',
             'env_value_id': self.value_bsd.pk,
@@ -832,8 +825,6 @@ class TestEnvValue(BaseCaseRun):
         self.assertTrue(rel.exists())
 
     def test_delete_env_value(self):
-        self.login_tester()
-
         self.client.get(self.env_value_url, {
             'a': 'remove',
             'env_value_id': self.value_linux.pk,
@@ -845,8 +836,6 @@ class TestEnvValue(BaseCaseRun):
         self.assertFalse(rel.exists())
 
     def test_delete_env_value_from_runs(self):
-        self.login_tester()
-
         self.client.get(self.env_value_url, {
             'a': 'remove',
             'env_value_id': self.value_linux.pk,
@@ -883,15 +872,12 @@ class TestBugActions(BaseCaseRun):
         cls.case_run_1.add_bug(cls.jira_kiwi_100, bug_system_id=cls.jira.pk)
 
     def test_404_if_case_run_id_not_exist(self):
-        self.login_tester()
         self.case_run_bug_url = reverse('testruns-bug', args=[999])
 
         response = self.client.get(self.case_run_bug_url, {})
         self.assert404(response)
 
     def test_refuse_if_action_is_unknown(self):
-        self.login_tester()
-
         post_data = {
             'a': 'unknown action',
             'case_run': self.case_run_1.pk,
@@ -907,8 +893,6 @@ class TestBugActions(BaseCaseRun):
             {'rc': 1, 'response': 'Unrecognizable actions'})
 
     def test_remove_bug_from_case_run(self):
-        self.login_tester()
-
         post_data = {
             'a': 'remove',
             'case_run': self.case_run_1.pk,
@@ -941,16 +925,12 @@ class TestRemoveCaseRuns(BaseCaseRun):
                                           args=[cls.test_run.pk])
 
     def test_nothing_change_if_no_case_run_passed(self):
-        self.login_tester()
-
         response = self.client.post(self.remove_case_run_url, {})
 
         self.assertRedirects(response,
                              reverse('testruns-get', args=[self.test_run.pk]))
 
     def test_ignore_non_integer_case_run_ids(self):
-        self.login_tester()
-
         expected_rest_case_runs_count = self.test_run.case_run.count() - 2
 
         self.client.post(self.remove_case_run_url,
@@ -964,8 +944,6 @@ class TestRemoveCaseRuns(BaseCaseRun):
                          self.test_run.case_run.count())
 
     def test_remove_case_runs(self):
-        self.login_tester()
-
         expected_rest_case_runs_count = self.test_run.case_run.count() - 1
 
         self.client.post(self.remove_case_run_url,
@@ -975,8 +953,6 @@ class TestRemoveCaseRuns(BaseCaseRun):
                          self.test_run.case_run.count())
 
     def test_redirect_to_run_if_still_case_runs_exist_after_removal(self):
-        self.login_tester()
-
         response = self.client.post(self.remove_case_run_url,
                                     {'case_run': [self.case_run_1.pk]})
 
@@ -984,8 +960,6 @@ class TestRemoveCaseRuns(BaseCaseRun):
                              reverse('testruns-get', args=[self.test_run.pk]))
 
     def test_redirect_to_add_case_runs_if_all_case_runs_are_removed(self):
-        self.login_tester()
-
         response = self.client.post(
             self.remove_case_run_url,
             {
@@ -1020,8 +994,6 @@ class TestUpdateCaseRunText(BaseCaseRun):
                                      breakdown='breakdown_1')
 
     def test_update_selected_case_runs(self):
-        self.login_tester()
-
         response = self.client.post(self.update_url,
                                     {'case_run': [self.case_run_1.pk]},
                                     follow=True)
@@ -1051,15 +1023,12 @@ class TestEditRun(BaseCaseRun):
                                  email='intern@example.com')
 
     def test_404_if_edit_non_existing_run(self):
-        self.login_tester()
-
         url = reverse('testruns-edit', args=[9999])
         response = self.client.get(url)
 
         self.assert404(response)
 
     def test_edit_run(self):
-        self.login_tester()
 
         post_data = {
             'summary': 'New run summary',
@@ -1100,7 +1069,6 @@ class TestAddCasesToRun(BaseCaseRun):
         user_should_have_perm(cls.tester, 'testruns.add_testcaserun')
 
     def test_show_add_cases_to_run(self):
-        self.login_tester()
         url = reverse('add-cases-to-run', args=[self.test_run.pk])
         response = self.client.get(url)
 
@@ -1155,94 +1123,3 @@ class TestAddCasesToRun(BaseCaseRun):
             ]
             for html in html_pieces:
                 self.assertContains(response, html, html=True)
-
-
-class Test_TestRunReportUnconfiguredJIRA(BaseCaseRun):
-    """
-        When JIRA isn't fully configured, i.e. missing API URL
-        Username and Password/Token this leads to errors when
-        generating TR reports. See
-        https://github.com/kiwitcms/Kiwi/issues/100
-
-        The problem is the underlying JIRA client assumes default
-        values and tries to connect to the JIRA instance upon
-        object creation!
-    """
-
-    @classmethod
-    def setUpTestData(cls):
-        super(Test_TestRunReportUnconfiguredJIRA, cls).setUpTestData()
-
-        # NOTE: base_url, api_url, api_username and api_password
-        # are intentionally left blank!
-        cls.it = BugSystem.objects.create(
-            name='Partially configured JIRA',
-            url_reg_exp='https://jira.example.com/browse/%s',
-            validate_reg_exp=r'^[A-Z0-9]+-\d+$',
-            tracker_type='JIRA'
-        )
-
-        cls.case_run_1.add_bug('KIWI-1234', cls.it.pk)
-
-    def test_reports(self):
-        url = reverse('run-report', args=[self.case_run_1.run_id])
-        response = self.client.get(url)
-
-        self.assertEqual(HTTPStatus.OK, response.status_code)
-        self.assertContains(response, self.it.url_reg_exp % 'KIWI-1234')
-
-
-class Test_TestRunReportUnconfiguredBugzilla(BaseCaseRun):
-    """
-        Test for https://github.com/kiwitcms/Kiwi/issues/100
-    """
-
-    @classmethod
-    def setUpTestData(cls):
-        super(Test_TestRunReportUnconfiguredBugzilla, cls).setUpTestData()
-
-        # NOTE: base_url, api_url, api_username and api_password
-        # are intentionally left blank!
-        cls.it = BugSystem.objects.create(
-            name='Partially configured Bugzilla',
-            url_reg_exp='https://bugzilla.example.com/show_bug.cgi?id=%s',
-            validate_reg_exp=r'^\d{1,7}$',
-            tracker_type='Bugzilla'
-        )
-
-        cls.case_run_1.add_bug('5678', cls.it.pk)
-
-    def test_reports(self):
-        url = reverse('run-report', args=[self.case_run_1.run_id])
-        response = self.client.get(url)
-
-        self.assertEqual(HTTPStatus.OK, response.status_code)
-        self.assertContains(response, self.it.url_reg_exp % '5678')
-
-
-class Test_TestRunReportUnconfiguredGitHub(BaseCaseRun):
-    """
-        Test for https://github.com/kiwitcms/Kiwi/issues/100
-    """
-
-    @classmethod
-    def setUpTestData(cls):
-        super(Test_TestRunReportUnconfiguredGitHub, cls).setUpTestData()
-
-        # NOTE: base_url, api_url, api_username and api_password
-        # are intentionally left blank!
-        cls.it = BugSystem.objects.create(
-            name='Partially configured GitHub',
-            url_reg_exp='https://github.com/kiwitcms/Kiwi/issues/%s',
-            validate_reg_exp=r'^\d+$',
-            tracker_type='GitHub'
-        )
-
-        cls.case_run_1.add_bug('100', cls.it.pk)
-
-    def test_reports(self):
-        url = reverse('run-report', args=[self.case_run_1.run_id])
-        response = self.client.get(url)
-
-        self.assertEqual(HTTPStatus.OK, response.status_code)
-        self.assertContains(response, self.it.url_reg_exp % '100')
