@@ -114,8 +114,6 @@ class EnvGroupFactory(DjangoModelFactory):
         model = 'management.EnvGroup'
 
     name = factory.Sequence(lambda n: 'Env group %d' % n)
-    manager = factory.SubFactory(UserFactory)
-    modified_by = factory.SubFactory(UserFactory)
 
     @factory.post_generation
     def property(self, create, extracted, **kwargs):
@@ -450,24 +448,3 @@ class UserProfileFactory(DjangoModelFactory):
         model = 'profiles.UserProfile'
 
     user = factory.SubFactory(UserFactory)
-
-
-class BookmarkCategoryFactory(DjangoModelFactory):
-
-    class Meta:
-        model = 'profiles.BookmarkCategory'
-
-    user = factory.SubFactory(UserFactory)
-    name = factory.Sequence(lambda n: 'Bookmark category %d' % n)
-
-
-class BookmarkFactory(DjangoModelFactory):
-
-    class Meta:
-        model = 'profiles.Bookmark'
-
-    user = factory.SubFactory(UserFactory)
-    category = factory.SubFactory(BookmarkCategoryFactory)
-    name = factory.Sequence(lambda n: 'Bookmark %d' % n)
-    description = ''
-    url = 'http://localhost/plan/1'

@@ -22,12 +22,11 @@ from django.views.generic.base import TemplateView
 from django_comments.models import Comment
 
 from tcms.core.utils import form_errors_to_list
-from tcms.core.logs.models import TCMSLogModel
 from tcms.core.utils import DataTableResult
+from tcms.core.contrib.comments.utils import get_comments
 from tcms.search import remove_from_request_path
 from tcms.search.order import order_case_queryset
 from tcms.testcases import actions
-from tcms.testcases import data
 from tcms.testcases.models import TestCase, TestCaseStatus, \
     TestCasePlan, BugSystem, TestCaseText, TestCaseComponent
 from tcms.management.models import Priority, Tag
@@ -683,7 +682,7 @@ def ajax_response(request, queryset, column_names, template_name):
     return HttpResponse(json_result, content_type='application/json')
 
 
-class SimpleTestCaseView(TemplateView, data.TestCaseViewDataMixin):
+class SimpleTestCaseView(TemplateView):
     """Simple read-only TestCase View used in TestPlan page"""
 
     template_name = 'case/get_details.html'
@@ -708,10 +707,10 @@ class SimpleTestCaseView(TemplateView, data.TestCaseViewDataMixin):
             data.update({
                 'review_mode': self.review_mode,
                 'test_case_text': case.latest_text(),
-                'logs': self.get_case_logs(case),
+                'logs': case.log(),
                 'components': case.component.only('name'),
                 'tags': case.tag.only('name'),
-                'case_comments': self.get_case_comments(case),
+                'case_comments': get_comments(case),
             })
 
         return data
@@ -776,7 +775,7 @@ class TestCaseCaseRunListPaneView(TemplateView):
         return data
 
 
-class TestCaseSimpleCaseRunView(TemplateView, data.TestCaseRunViewDataMixin):
+class TestCaseSimpleCaseRunView(TemplateView):
     """Display caserun information in Case Runs tab in case page
 
     This view only shows notes, comments and logs simply. So, call it simple.
@@ -806,8 +805,8 @@ class TestCaseSimpleCaseRunView(TemplateView, data.TestCaseRunViewDataMixin):
         data = super(this_cls, self).get_context_data(**kwargs)
 
         caserun = self.get_caserun()
-        logs = self.get_case_run_logs(caserun)
-        comments = self.get_case_run_comments(caserun)
+        logs = caserun.log()
+        comments = get_comments(caserun)
 
         data.update({
             'test_caserun': caserun,
@@ -817,9 +816,7 @@ class TestCaseSimpleCaseRunView(TemplateView, data.TestCaseRunViewDataMixin):
         return data
 
 
-class TestCaseCaseRunDetailPanelView(TemplateView,
-                                     data.TestCaseViewDataMixin,
-                                     data.TestCaseRunViewDataMixin):
+class TestCaseCaseRunDetailPanelView(TemplateView):
     """Display case run detail in run page"""
 
     template_name = 'case/get_details_case_run.html'
@@ -854,8 +851,8 @@ class TestCaseCaseRunDetailPanelView(TemplateView,
         test_case_text = case.get_text_with_version(self.case_text_version)
 
         # Data of TestCaseRun
-        caserun_comments = self.get_case_run_comments(case_run)
-        caserun_logs = self.get_case_run_logs(case_run)
+        caserun_comments = get_comments(case_run)
+        caserun_logs = case_run.log()
 
         caserun_status = TestCaseRunStatus.objects.values('pk', 'name')
         caserun_status = caserun_status.order_by('pk')
@@ -891,8 +888,7 @@ def get(request, case_id):
     tps = tc.plan.select_related('author', 'product', 'type').all()
 
     # log
-    log_id = str(case_id)
-    logs = TCMSLogModel.get_logs_for_model(TestCase, log_id)
+    logs = tc.log()
 
     logs = itertools.groupby(logs, lambda l: l.date)
     logs = [(day, list(log_actions)) for day, log_actions in logs]

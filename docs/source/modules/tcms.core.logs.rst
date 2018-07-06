@@ -1,5 +1,5 @@
-tcms\.core\.logs package
-========================
+tcms.core.logs package
+======================
 
 .. automodule:: tcms.core.logs
     :members:
@@ -11,7 +11,5 @@ Submodules
 
 .. toctree::
 
-   tcms.core.logs.managers
    tcms.core.logs.models
-   tcms.core.logs.views
 
