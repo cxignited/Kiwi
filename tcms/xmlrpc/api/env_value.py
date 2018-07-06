@@ -44,6 +44,7 @@ def create(values, **kwargs):
                 'property': 'OS',
                 'is_active': True,
             }
+            >>> EnvValues.create(values)
     """
     new_env_val = EnvValue.create(values)
     print("ENVVVVV: {}".format(new_env_val))
