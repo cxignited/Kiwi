@@ -47,7 +47,6 @@ def create(values, **kwargs):
             >>> EnvValues.create(values)
     """
     new_env_val = EnvValue.create(values)
-    print("ENVVVVV: {}".format(new_env_val))
     if not new_env_val:
         raise ValueError(('The env value "{}" already exists '
                           'for the env property "{}"').format(values['value'], values['property']))

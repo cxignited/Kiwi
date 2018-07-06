@@ -47,6 +47,7 @@ def create(values, **kwargs):
                     'property_id': 2,
                     'is_active': True,
                 }
+                >>> EnvGroup.create(values)
         """
         new_env_property = EnvProperty.create(values)
         if not new_env_property:
