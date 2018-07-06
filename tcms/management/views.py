@@ -347,7 +347,7 @@ def environment_property_values(request):
                 value.save()
         else:
             return HttpResponse('Argument illegal')
-
+    message = ''
     if duplicated_property_value:
         message = 'Value(s) named \'%s\' already exists in this property, ' \
                   'please select another name.' % "', '".join(duplicated_property_value)

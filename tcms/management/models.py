@@ -284,6 +284,24 @@ class EnvGroup(TCMSActionModel):
     def get_active(cls):
         return cls.objects.filter(is_active=True)
 
+    @classmethod
+    def create(cls, values):
+        env_group = None
+        properties_name = values['property']
+        properties = EnvProperty.objects.filter(
+            name__in=properties_name)
+
+        if not cls.objects.filter(name=values['name']):
+            env_group = cls.objects.create(name=values['name'],
+                                           manager=values['manager'],
+                                           modified_by=values['manager'],
+                                           is_active=values['is_active'])
+
+            for prop in properties:
+                EnvGroupPropertyMap.objects.create(group=env_group, property=prop)
+
+        return env_group
+
 
 class EnvProperty(TCMSActionModel):
     name = models.CharField(unique=True, max_length=255)
@@ -298,6 +316,18 @@ class EnvProperty(TCMSActionModel):
     @classmethod
     def get_active(cls):
         return cls.objects.filter(is_active=True)
+
+    @classmethod
+    def create(cls, values):
+        env_property = None
+
+        env_property_exists = cls.objects.filter(name=values['name'])
+        if not env_property_exists:
+            env_property = cls.objects.create(
+                name=values['name'],
+                is_active=values['is_active']
+            )
+        return env_property
 
 
 class EnvGroupPropertyMap(models.Model):
@@ -324,3 +354,32 @@ class EnvValue(TCMSActionModel):
     @classmethod
     def get_active(cls):
         return cls.objects.filter(is_active=True)
+
+    @classmethod
+    def create(cls, values):
+        env_val = None
+        from operator import itemgetter
+        property_name = values['property']
+        value = values['value']
+
+        # get the property id from the name
+        property_id = EnvProperty.objects.filter(
+            name=property_name).values('id')
+        property_id = list(map(itemgetter('id'), property_id))[0]
+
+        # get the EnvPorperty object instance
+        property = EnvProperty.objects.get(pk=property_id)
+
+        # get all the EnvValues associated to the property
+        prop_val = EnvValue.objects.filter(
+            property__name__exact=property_name).values('value')
+
+        env_values = list(map(itemgetter('value'), prop_val))
+        if value not in env_values:
+            env_val = cls.objects.create(
+                value=values['value'],
+                property_id=property_id,
+                property=property,
+                is_active=values['is_active']
+            )
+        return env_val
