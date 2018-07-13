@@ -44,6 +44,19 @@ class Classification(TCMSActionModel):
     def __str__(self):
         return self.name
 
+    @classmethod
+    def create(cls, values):
+        classification = None
+
+        classification_exists = cls.objects.filter(name=values['name'])
+        if not classification_exists:
+            classification = cls.objects.create(
+                    name=values['name'],
+                    description=values['description'],
+                    sortkey=values['sortkey']
+                    )
+        return classification
+
 
 class Product(TCMSActionModel):
     id = models.AutoField(max_length=5, primary_key=True)
@@ -101,6 +114,19 @@ class Product(TCMSActionModel):
 
     def as_choice(self):
         return (self.id, self.name)
+
+    @classmethod
+    def create(cls, values):
+        product = None
+
+        product_exists = cls.objects.filter(name=values['name'])
+        if not product_exists:
+            product = cls.objects.create(
+                    name=values['name'],
+                    classification=values['classification'],
+                    description=values['description']
+                    )
+            return product
 
 
 class Priority(TCMSActionModel):
