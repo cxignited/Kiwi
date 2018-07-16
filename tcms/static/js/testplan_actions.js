@@ -339,45 +339,14 @@ Nitrate.TestPlans.TreeView = {
       tvTabContainer.find('.remove_node')[0].disabled = true;
     }
   },
-  'addChildPlan': function(container, plan_id) {
+  'updateChildPlan': function(container, current_plan_id, plan_id, plan_id_type) {
     var self = this;
-    var tree = Nitrate.TestPlans.TreeView;
     var childPlanIds = window.prompt('Enter a comma separated list of plan IDs');
     if (!childPlanIds) {
       return false;
     }
 
-    var planIdRegex = /^\d+$/;
-    var cleanedChildPlanIds = [];
-    var cleaned = true;
-    childPlanIds.split(',').forEach(function(element, index) {
-      var s = element.trim();
-      if (s === '') {
-        return true;
-      }
-
-      if (!planIdRegex.test(s)) {
-        window.alert('Plan Id should be a numeric. ' + s + ' is not valid.');
-        cleaned = false;
-        return cleaned;
-      }
-
-      var childPlanId = window.parseInt(s);
-      var isParentOrThisPlan = childPlanId === tree.data[0].pk || childPlanId === plan_id;
-      if (isParentOrThisPlan) {
-        window.alert('Cannot add parent or self.');
-        cleaned = false;
-        return cleaned;
-      }
-
-      cleanedChildPlanIds.push(childPlanId);
-    });
-
-    if (!cleaned) {
-      return;
-    }
-
-    var parameters = { pk__in: cleanedChildPlanIds.join(',') };
+    var parameters = { pk__in: childPlanIds };
 
     var callback = function(e) {
       e.stopPropagation();
@@ -388,111 +357,25 @@ Nitrate.TestPlans.TreeView = {
         var container = planDetails.getTabContentContainer({
           containerId: planDetails.tabContentContainerIds.treeview
         });
-        planDetails.loadPlansTreeView(plan_id);
+        planDetails.loadPlansTreeView(current_plan_id);
         self.toggleRemoveChildPlanButton();
       };
 
-      updateObject('testplans.testplan', Nitrate.Utils.formSerialize(this)['plan_id'], 'parent',
-        plan_id, 'int', cbUpdateTreeView);
+      jQ.ajax({
+        'url': '/plan/update-parent/',
+        'type': 'POST',
+        'data': { child_ids: childPlanIds.split(','), parent_id: plan_id },
+        'success': function (data, textStatus, jqXHR) {
+          cbUpdateTreeView(jqXHR);
+        },
+        'error': function (jqXHR, textStatus, errorThrown) {
+          json_failure(jqXHR);
+        }
+      });
     };
 
-    // FIXME: this first argument is not being used.
-    constructPlanParentPreviewDialog(childPlanIds, parameters, callback);
+    previewPlan(parameters, '', callback);
   },
-  'removeChildPlan': function(container, plan_id) {
-    var self = this;
-    var tree = Nitrate.TestPlans.TreeView;
-    var plan_obj = tree.traverse(tree.data, plan_id);
-    var children_pks = [];
-    for (var i = 0; i < plan_obj.children.length; i++) {
-      children_pks.push(plan_obj.children[i].pk);
-    }
-
-    var p = prompt('Enter a comma separated list of plan IDs to be removed');
-    if (!p) {
-      return false;
-    }
-    var prompt_pks = p.split(',');
-    for (var j = 0 ; j < prompt_pks.length; j++) {
-      if (prompt_pks[j].indexOf(plan_id.toString()) > -1) {
-        window.alert('can not remove current plan');
-        return false;
-      } else if (jQ.inArray(window.parseInt(prompt_pks[j]), children_pks) === -1) {
-        window.alert('plan ' + prompt_pks[j] + ' is not the child node of current plan');
-        return false;
-      }
-    }
-    var parameters = {pk__in: p};
-
-    var callback = function(e) {
-      e.stopPropagation();
-      e.preventDefault();
-      var tree = Nitrate.TestPlans.TreeView;
-      var cbUpdateTreeView = function(t) {
-        clearDialog();
-        var planDetails = Nitrate.TestPlans.Details;
-        var container = planDetails.getTabContentContainer({
-          containerId: planDetails.tabContentContainerIds.treeview
-        });
-        planDetails.loadPlansTreeView(plan_id);
-        self.toggleRemoveChildPlanButton();
-      };
-
-      updateObject('testplans.testplan', Nitrate.Utils.formSerialize(this)['plan_id'], 'parent',
-        0, 'None', cbUpdateTreeView);
-    };
-
-    constructPlanParentPreviewDialog(p, parameters, callback);
-  },
-  'changeParentPlan': function(container, plan_id) {
-    var tree = Nitrate.TestPlans.TreeView;
-    var p = prompt('Enter new parent plan ID');
-    if (!p) {
-      return false;
-    }
-    var planId = window.parseInt(p);
-      if (isNaN(planId)) {
-        window.alert('Plan Id should be a numeric. ' + p + ' is invalid.');
-        return false;
-      }
-      if (planId === plan_id) {
-        window.alert('Parent plan should not be the current plan itself.');
-        return false;
-      }
-
-    var parameters = {plan_id: p};
-    var callback = function(e) {
-      e.stopPropagation();
-      e.preventDefault();
-      var tree = Nitrate.TestPlans.TreeView;
-      var cbAfterUpdatingPlan = function(t) {
-        var plan;
-        var param = { plan_id: p, t: 'ajax' };
-        var c = function(t) {
-          plan = Nitrate.Utils.convert('obj_to_list', jQ.parseJSON(t.responseText));
-
-          if (tree.data[0].pk == plan_id) {
-            plan[0].children = jQ.extend({}, tree.data);
-            tree.data = plan;
-            tree.render_page();
-          } else {
-            plan[0].children = jQ.extend({}, tree.data[0].children);
-            tree.data = plan;
-            tree.render_page();
-          }
-
-          clearDialog();
-        };
-
-        tree.filter(param, c);
-      };
-
-      updateObject('testplans.testplan', plan_id, 'parent',
-        Nitrate.Utils.formSerialize(this)['plan_id'], 'int', cbAfterUpdatingPlan);
-    };
-
-    constructPlanParentPreviewDialog(p, parameters, callback);
-  }
 };
 
 Nitrate.TestPlans.Create.on_load = function() {
@@ -870,19 +753,6 @@ Nitrate.TestPlans.Details = {
         Nitrate.TestPlans.Details.reviewingCasesTabOpened = true;
       }
     });
-
-    // Initial the enable/disble btns
-    if (jQ('#btn_disable').length) {
-      jQ('#btn_disable').bind('click', function(e){
-        updateObject('testplans.testplan', plan_id, 'is_active', 'False', 'bool', reloadWindow);
-      });
-    }
-
-    if (jQ('#btn_enable').length) {
-      jQ('#btn_enable').bind('click', function(e) {
-        updateObject('testplans.testplan', plan_id, 'is_active', 'True', 'bool', reloadWindow);
-      });
-    }
   },
   'reopenCasesTabThen': function() {
     Nitrate.TestPlans.Details.testcasesTabOpened = false;
@@ -965,14 +835,11 @@ Nitrate.TestPlans.Details = {
     });
     var treeview = jQ('#treeview')[0];
     var planPK = jQ('#id_tree_container').data('param');
-    jQ('#js-change-parent-node').bind('click', function() {
-      Nitrate.TestPlans.TreeView.changeParentPlan(treeview, planPK);
-    });
     jQ('#js-add-child-node').bind('click', function() {
-      Nitrate.TestPlans.TreeView.addChildPlan(treeview, planPK);
+      Nitrate.TestPlans.TreeView.updateChildPlan(treeview, planPK, planPK, 'int');
     });
     jQ('#js-remove-child-node').bind('click', function() {
-      Nitrate.TestPlans.TreeView.removeChildPlan(treeview, planPK);
+      Nitrate.TestPlans.TreeView.updateChildPlan(treeview, planPK, 0, 'None');
     });
   }
 };
@@ -1069,26 +936,6 @@ Nitrate.TestPlans.Clone.on_load = function() {
     window.history.back();
   });
 };
-
-function showMoreSummary() {
-  jQ('#display_summary').show();
-  if (jQ('#display_summary_short').length) {
-    jQ('#id_link_show_more').hide();
-    jQ('#id_link_show_short').show();
-    jQ('#display_summary_short').hide();
-  }
-}
-
-function showShortSummary() {
-  jQ('#id_link_show_more').show();
-  jQ('#display_summary').hide();
-  if (jQ('#display_summary_short').length) {
-    jQ('#id_link_show_short').hide();
-    jQ('#display_summary_short').show();
-  }
-
-  window.scrollTo(0, 0);
-}
 
 /*
  * Unlink selected cases from current TestPlan.
@@ -1189,21 +1036,9 @@ function bindEventsOnLoadedCases(options) {
         Nitrate.TestPlans.Details.refreshCasesSelectionCheck(jQ(cases_container));
       });
 
-    // Observe the change sortkey
-    jQ(container).parent().find('.case_sortkey.js-just-loaded').bind('click', function(e) {
-      var c = jQ(this).next(); // Container
-      var params = { 'testcaseplan': c.html(), 'sortkey': jQ(this).html() };
-      var callback = function(t) {
-       constructPlanDetailsCasesZone(cases_container, plan_id, parameters);
-      };
-      changeCaseOrder(params, callback);
-    });
-
     jQ(container).parent().find('.change_status_selector.js-just-loaded').bind('change', function(e) {
-      var be_confirmed = (this.value == '2');
-      var was_confirmed = (jQ(this).parent()[0].attributes['status'].value == "CONFIRMED");
       var case_id = jQ(this).parent().parent()[0].id;
-      changeTestCaseStatus(plan_id, this, case_id, be_confirmed, was_confirmed);
+      changeTestCaseStatus(plan_id, [case_id], this.value, jQ(this).parents('.tab_list'));
     });
 
     // Display/Hide the case content
@@ -1349,130 +1184,46 @@ function serializeFormData(options) {
 }
 
 
-/*
- * Event handler invoked when TestCases' Status is changed.
- */
-function onTestCaseStatusChange(options) {
-  var form = options.form;
-  var table = options.table;
-  var container = options.container;
-  var plan_id = options.planId;
-
-  return function(e) {
-    var selection = serializeCaseFromInputList2(table);
-    if (selection.empty()) {
-      window.alert(default_messages.alert.no_case_selected);
-      return false;
-    }
-    var status_pk = this.value;
-    if (!status_pk) {
-      return false;
-    }
-    var c = window.confirm(default_messages.confirm.change_case_status);
-    if (!c) {
-      return false;
-    }
-
-    var postdata = serializeFormData({
-      'form': form,
-      'zoneContainer': container,
-      'casesSelection': selection,
-      'hashable': true
+function selectedCaseIds(container) {
+    // return a list of case ids for currently selected test cases
+    // in the UI
+    var case_ids = [];
+    jQ(container).find('.case_selector').each(function(index, element) {
+        if (element.checked) {
+            case_ids.push(element.value);
+        }
     });
-    postdata.a = 'update';
-
-    var update_status_data = {
-      'from_plan': postdata.from_plan,
-      'case': postdata.case,
-      'target_field': 'case_status',
-      'new_value': status_pk
-    };
-
-    var afterStatusChangedCallback = function(response) {
-      var returnobj = jQ.parseJSON(response.responseText);
-
-      if (returnobj.rc == 0) {
-        constructPlanDetailsCasesZone(container, plan_id, postdata);
-        jQ('#run_case_count').text(returnobj.run_case_count);
-        jQ('#case_count').text(returnobj.case_count);
-        jQ('#review_case_count').text(returnobj.review_case_count);
-
-        Nitrate.TestPlans.Details.reopenTabHelper(jQ(container));
-      } else {
-        window.alert(returnobj.response);
-        return false;
-      }
-    };
-
-    jQ.ajax({
-      'type': 'POST',
-      'url': '/ajax/update/case-status/',
-      'data': update_status_data,
-      'traditional': true,
-      'success': function (data, textStatus, jqXHR) {
-        afterStatusChangedCallback(jqXHR);
-      },
-      'error': function (jqXHR, textStatus, errorThrown) {
-        json_failure(jqXHR);
-      }
-    });
-  };
+    return case_ids;
 }
 
 
-/*
- * Event handler invoked when TestCases' Priority is changed.
- */
-function onTestCasePriorityChange(options) {
-  var form = options.form;
-  var table = options.table;
-  var container = options.container;
-  var plan_id = options.planId;
-
-  return function(e) {
-    var selection = serializeCaseFromInputList2(table);
-    if (selection.empty()) {
-      window.alert(default_messages.alert.no_case_selected);
-      return false;
-    }
-    // FIXME: how about show a message to user to let user know what is happening?
-    if (!this.value) {
-      return false;
-    }
-    var c = window.confirm(default_messages.confirm.change_case_priority);
-    if (!c) {
-      return false;
-    }
-
-    var postdata = serializeFormData({
-      'form': form,
-      'zoneContainer': container,
-      'casesSelection': selection,
-      'hashable': true
-    });
-    postdata.a = 'update';
-
-    var update_priority_data = {
-      'from_plan': postdata.from_plan,
-      'case': postdata.case,
-      'target_field': 'priority',
-      'new_value': this.value
-    };
-
+function changeTestCasePriority(plan_id, case_ids, new_value, container) {
     var afterPriorityChangedCallback = function(response) {
       var returnobj = jQ.parseJSON(response.responseText);
       if (returnobj.rc != 0) {
         window.alert(returnobj.response);
         return false;
       }
-      constructPlanDetailsCasesZone(container, plan_id, postdata);
+
+      var template_type = 'case';
+
+      if (container.attr('id') === 'reviewcases') {
+          template_type = 'review_case';
+      }
+
+      var parameters = {
+          'a': 'initial',
+          'from_plan': plan_id,
+          'template_type': template_type,
+      };
+
+      constructPlanDetailsCasesZone(container, plan_id, parameters);
     };
 
     jQ.ajax({
       'type': 'POST',
       'url': '/ajax/update/cases-priority/',
-      'data': update_priority_data,
-      'traditional': true,
+      'data': {'case': case_ids, 'new_value': new_value },
       'success': function (data, textStatus, jqXHR) {
         afterPriorityChangedCallback(jqXHR);
       },
@@ -1480,7 +1231,6 @@ function onTestCasePriorityChange(options) {
         json_failure(jqXHR);
       }
     });
-  };
 }
 
 
@@ -1523,42 +1273,6 @@ function onTestCaseAutomatedClick(options) {
         'zoneContainer': container,
         'casesSelection': selection
       });
-  };
-}
-
-/*
- * To change selected cases' sort number.
- */
-function onTestCaseSortNumberClick(options) {
-  var form = options.form;
-  var table = options.table;
-  var plan_id = options.planId;
-  var container = options.container;
-
-  return function(e) {
-    // NOTE: new implemenation does not use testcaseplan.pk
-    var selection = serializeCaseFromInputList2(table);
-    if (selection.empty()) {
-      window.alert(default_messages.alert.no_case_selected);
-      return false;
-    }
-    var postdata = serializeFormData({
-      'form': form,
-      'zoneContainer': container,
-      'casesSelection': selection,
-      'hashable': true
-    });
-
-    var callback = function(response) {
-      var returnobj = jQ.parseJSON(response.responseText);
-      if (returnobj.rc != 0) {
-        window.alert(returnobj.response);
-        return false;
-      }
-      postdata.case = selection.selectedCasesIds;
-      constructPlanDetailsCasesZone(container, plan_id, postdata);
-    };
-    changeCaseOrder2(postdata, callback);
   };
 }
 
@@ -1629,67 +1343,6 @@ function onCategoryClick(options) {
 }
 
 /*
- * To change selected cases' default tester.
- */
-function onTestCaseDefaultTesterClick(options) {
-  var form = options.form;
-  var table = options.table;
-  var plan_id = options.planId;
-  var container = options.container;
-
-  return function(e) {
-    var selection = serializeCaseFromInputList2(table);
-    if (selection.empty()) {
-      window.alert(default_messages.alert.no_case_selected);
-      return false;
-    }
-
-    var params = serializeFormData({
-      'form': form,
-      'zoneContainer': container,
-      'casesSelection': selection,
-      'hashable': true
-    });
-    params.a = 'update';
-
-    var cbAfterDefaultTesterChanged = function(response) {
-      var returnobj = jQ.parseJSON(response.responseText);
-      if (returnobj.rc != 0) {
-        window.alert(returnobj.response);
-        return false;
-      }
-      constructPlanDetailsCasesZone(container, plan_id, params);
-    };
-
-    var email_or_username = window.prompt('Please enter new email or username');
-    if (!email_or_username) {
-      return false;
-    }
-
-    var update_default_tester_data = {
-      'from_plan': params.from_plan,
-      'case': params.case,
-      'target_field': 'default_tester',
-      'new_value': email_or_username
-    };
-
-    jQ.ajax({
-      'type': 'POST',
-      'url': '/ajax/update/cases-default-tester/',
-      'data': update_default_tester_data,
-      'traditional': true,
-      'success': function (data, textStatus, jqXHR) {
-        cbAfterDefaultTesterChanged(jqXHR);
-      },
-      'error': function (jqXHR, textStatus, errorThrown) {
-        json_failure(jqXHR);
-      }
-    });
-  };
-}
-
-
-/*
  * To change selected cases' component.
  */
 function onTestCaseComponentClick(options) {
@@ -1749,41 +1402,13 @@ function onTestCaseComponentClick(options) {
 
 
 /*
- * To change selected cases' reviewer.
+ * To change selected cases' Reviewer or Default tester.
  */
-function onTestCaseReviewerClick(options) {
-  var form = options.form;
-  var table = options.table;
-  var plan_id = options.planId;
-  var container = options.container;
-  var parameters = options.parameters;
-
-  return function(e) {
-    var selection = serializeCaseFromInputList2(table);
-    if (selection.empty()) {
-      window.alert(default_messages.alert.no_case_selected);
-      return false;
-    }
-
+function changeTestCaseActor(plan_id, case_ids, container, what_to_update) {
     var email_or_username = window.prompt('Please type new email or username');
     if (!email_or_username) {
       return false;
     }
-
-    var postData = serializeFormData({
-      'form': form,
-      'zoneContainer': container,
-      'casesSelection': selection,
-      'hashable': true
-    });
-    postData.a = 'update';
-
-    var update_reviewer_data = {
-      'from_plan': postData.plan,
-      'case': postData.case,
-      'target_field': 'reviewer',
-      'new_value': email_or_username
-    };
 
     var cbAfterReviewerChanged = function(response) {
       var returnobj = jQ.parseJSON(response.responseText);
@@ -1791,14 +1416,26 @@ function onTestCaseReviewerClick(options) {
         window.alert(returnobj.response);
         return false;
       }
+
+      var template_type = 'case';
+
+      if (what_to_update === 'reviewer') {
+          template_type = 'review_case';
+      }
+
+      var parameters = {
+          'a': 'initial',
+          'from_plan': plan_id,
+          'template_type': template_type,
+      };
+
       constructPlanDetailsCasesZone(container, plan_id, parameters);
     };
 
     jQ.ajax({
       'type': 'POST',
-      'url': '/ajax/update/cases-reviewer/',
-      'data': update_reviewer_data,
-      'traditional': true,
+      'url': '/ajax/update/cases-actor/',
+      'data': {'username': email_or_username, 'case': case_ids, 'what_to_update': what_to_update},
       'success': function (data, textStatus, jqXHR) {
         cbAfterReviewerChanged(jqXHR);
       },
@@ -1806,7 +1443,6 @@ function onTestCaseReviewerClick(options) {
         json_failure(jqXHR);
       }
     });
-  };
 }
 
 /*
@@ -1897,21 +1533,6 @@ function constructPlanDetailsCasesZoneCallback(options) {
       });
     }
 
-    // Bind batch change case status selector
-    var element = jQ(form).parent().find('input[name="new_case_status_id"]')[0];
-    if (element !== undefined) {
-      jQ(element).bind('change', onTestCaseStatusChange({
-        'form': form, 'table': table, 'container': container, 'planId': plan_id
-      }));
-    }
-
-    element = jQ(form).parent().find('input[name="new_priority_id"]')[0];
-    if (element !== undefined) {
-      jQ(element).bind('change', onTestCasePriorityChange({
-        'form': form, 'table': table, 'container': container, 'planId': plan_id
-      }));
-    }
-
     // Observe the batch case automated status button
     element = jQ(form).parent().find('input.btn_automated')[0];
     if (element !== undefined) {
@@ -1930,27 +1551,6 @@ function constructPlanDetailsCasesZoneCallback(options) {
     element = jQ(form).parent().find('input.btn_category')[0];
     if (element !== undefined) {
       jQ(element).bind('click', onCategoryClick({
-        'container': container, 'form': form, 'planId': plan_id, 'table': table, 'parameters': parameters
-      }));
-    }
-
-    element = jQ(form).parent().find('input.btn_default_tester')[0];
-    if (element !== undefined) {
-      jQ(element).bind('click', onTestCaseDefaultTesterClick({
-        'container': container, 'form': form, 'planId': plan_id, 'table': table
-      }));
-    }
-
-    element = jQ(form).parent().find('input.sort_list')[0];
-    if (element !== undefined) {
-      jQ(element).bind('click', onTestCaseSortNumberClick({
-        'container': container, 'form': form, 'planId': plan_id, 'table': table
-      }));
-    }
-
-    element = jQ(form).parent().find('input.btn_reviewer')[0];
-    if (element !== undefined) {
-      jQ(element).bind('click', onTestCaseReviewerClick({
         'container': container, 'form': form, 'planId': plan_id, 'table': table, 'parameters': parameters
       }));
     }
@@ -2000,9 +1600,6 @@ function constructPlanDetailsCasesZone(container, plan_id, parameters) {
     'traditional': true,
     'success': function (data, textStatus, jqXHR) {
       jQ(container).html(data);
-      jQ('.show_change_status_link').bind('click', function() {
-        jQ(this).hide().next().show();
-      });
 
       var casesTable = jQ(container).find('.js-cases-list')[0];
       var navForm = jQ('#js-cases-nav-form')[0];
@@ -2047,14 +1644,29 @@ function constructPlanDetailsCasesZone(container, plan_id, parameters) {
           'requestMethod': 'get'
         });
       });
+
       jQ('.js-status-item').bind('click', function() {
-        this.form.new_case_status_id.value = jQ(this).data('param');
-        fireEvent(this.form.new_case_status_id, 'change');
+        var new_value = jQ(this).data('param');
+        var case_ids = selectedCaseIds(container);
+        changeTestCaseStatus(plan_id, case_ids, new_value, jQ(container));
       });
+
       jQ('.js-priority-item').bind('click', function() {
-        this.form.new_priority_id.value = jQ(this).data('param');
-        fireEvent(this.form.new_priority_id, 'change');
+        var new_value = jQ(this).data('param');
+        var case_ids = selectedCaseIds(container);
+        changeTestCasePriority(plan_id, case_ids, new_value, jQ(container));
       });
+
+      jQ('input.btn_reviewer').bind('click', function() {
+        var case_ids = selectedCaseIds(container);
+        changeTestCaseActor(plan_id, case_ids, jQ(container), 'reviewer');
+      });
+
+      jQ('input.btn_default_tester').bind('click', function() {
+        var case_ids = selectedCaseIds(container);
+        changeTestCaseActor(plan_id, case_ids, jQ(container), 'default_tester');
+      });
+
       jQ('#id_blind_all_link').find('.collapse-all').bind('click', function() {
         toggleAllCases(this);
       });
@@ -2071,6 +1683,7 @@ function constructPlanDetailsCasesZone(container, plan_id, parameters) {
   });
 }
 
+
 function sortCase(container, plan_id, order) {
   var form = jQ(container).children()[0];
   var parameters = Nitrate.Utils.formSerialize(form);
@@ -2084,25 +1697,6 @@ function sortCase(container, plan_id, order) {
   constructPlanDetailsCasesZone(container, plan_id, parameters);
 }
 
-function changeCaseMember(parameters, callback) {
-}
-
-function constructPlanParentPreviewDialog(plan_id, parameters, callback) {
-  var action = '';
-  var notice = 'This operation will overwrite existing data';
-    /*
-    //FIXME: Overwrite is not availabel for updateObject function yet.
-    var s = new Element('span');
-    var s1 = new Element('input', {type: 'checkbox', name: 'overwrite'});
-    var s2 = new Element('label');
-    s2.update('Overwrite exist parent.');
-    var s3 = new Element('input', {type: 'submit'});
-    s.appendChild(s1);
-    s.appendChild(s2);
-    s.appendChild(s3);
-    */
-  previewPlan(parameters, action, callback, notice);
-}
 
 function resortCasesDragAndDrop(container, button, form, table, parameters, callback) {
   if (button.innerHTML !== 'Done Sorting') {

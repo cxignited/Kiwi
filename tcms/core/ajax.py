@@ -4,52 +4,32 @@ Shared functions for plan/case/run.
 
 Most of these functions are use for Ajax.
 """
-import datetime
-import json
+from http import HTTPStatus
 from distutils.util import strtobool
 
-from django import http
-from django.db.models import Q, Count
+from django.db.models import Count
 from django.contrib.auth.models import User
 from django.core import serializers
-from django.core.exceptions import ObjectDoesNotExist
-from django.apps import apps
 from django.forms import ValidationError
-from django.http import Http404
-from django.http import HttpResponse
-from django.shortcuts import render
+from django.http import HttpResponse, JsonResponse
+from django.views.generic.base import View
+from django.utils.decorators import method_decorator
 from django.views.decorators.http import require_GET
 from django.views.decorators.http import require_POST
+from django.shortcuts import get_object_or_404, render
+from django.utils.translation import ugettext_lazy as _
+from django.contrib.auth.decorators import permission_required
 
-from tcms.signals import POST_UPDATE_SIGNAL
 from tcms.management.models import Component, Build, Version
-from tcms.management.models import Priority
 from tcms.management.models import Tag
 from tcms.management.models import EnvGroup, EnvProperty, EnvValue
 from tcms.testcases.models import TestCase, Bug
 from tcms.testcases.models import Category
-from tcms.testcases.models import TestCaseStatus, TestCaseTag
-from tcms.testcases.views import plan_from_request_or_none
-from tcms.testplans.models import TestPlan, TestCasePlan, TestPlanTag
-from tcms.testruns.models import TestRun, TestCaseRun, TestCaseRunStatus, TestRunTag
+from tcms.testcases.models import TestCaseTag
+from tcms.testplans.models import TestPlan, TestPlanTag
+from tcms.testruns.models import TestRun, TestCaseRun, TestRunTag
 from tcms.core.helpers.comments import add_comment
 from tcms.core.utils.validations import validate_bug_id
-
-
-def check_permission(request, ctype):
-    perm = '%s.change_%s' % tuple(ctype.split('.'))
-    if request.user.has_perm(perm):
-        return True
-    return False
-
-
-def strip_parameters(request_dict, skip_parameters):
-    parameters = {}
-    for key, value in request_dict.items():
-        if key not in skip_parameters and value:
-            parameters[str(key)] = value
-
-    return parameters
 
 
 @require_GET
@@ -61,16 +41,6 @@ def info(request):
 
     if not info_type:
         return HttpResponse('Unrecognizable info-type')
-
-    if request.GET.get('format') == 'ulli':
-        field = request.GET.get('field', default='name')
-
-        response_str = '<ul>'
-        for obj_value in info_type().values(field):
-            response_str += '<li>' + obj_value.get(field, None) + '</li>'
-        response_str += '</ul>'
-
-        return HttpResponse(response_str)
 
     return HttpResponse(serializers.serialize('json', info_type(), fields=('name', 'value')))
 
@@ -106,9 +76,8 @@ class _InfoObjects(object):
     def env_values(self):
         return EnvValue.objects.filter(property__id=self.request.GET.get('env_property_id'))
 
-    def users(self):
-        query = strip_parameters(self.request.GET, skip_parameters=('info_type', 'field', 'format'))
-        return User.objects.filter(**query)
+    def tags(self):
+        return Tag.objects.filter(name__startswith=self.request.GET['name__startswith'])
 
     def versions(self):
         return Version.objects.filter(product__id=self.product_id)
@@ -242,443 +211,96 @@ class _TagCounter(object):  # pylint: disable=too-few-public-methods
         return 0
 
 
-def get_value_by_type(val, v_type):
-    """
-    Exampls:
-    1. get_value_by_type('True', 'bool')
-    (1, None)
-    2. get_value_by_type('19860624 123059', 'datetime')
-    (datetime.datetime(1986, 6, 24, 12, 30, 59), None)
-    3. get_value_by_type('5', 'int')
-    ('5', None)
-    4. get_value_by_type('string', 'str')
-    ('string', None)
-    5. get_value_by_type('everything', 'None')
-    (None, None)
-    6. get_value_by_type('buggy', 'buggy')
-    (None, 'Unsupported value type.')
-    7. get_value_by_type('string', 'int')
-    (None, "invalid literal for int() with base 10: 'string'")
-    """
-    value = error = None
-
-    def get_time(time):
-        date_time = datetime.datetime
-        if time == 'NOW':
-            return date_time.now()
-        return date_time.strptime(time, '%Y%m%d %H%M%S')
-
-    pipes = {
-        # Temporary solution is convert all of data to str
-        # 'bool': lambda x: x == 'True',
-        'bool': lambda x: x == 'True' and 1 or 0,
-        'datetime': get_time,
-        'int': lambda x: str(int(x)),
-        'str': lambda x: str(x),
-        'None': lambda x: None,
-    }
-    pipe = pipes.get(v_type, None)
-    if pipe is None:
-        error = 'Unsupported value type.'
-    else:
-        try:
-            value = pipe(val)
-        except Exception as error:
-            error = str(error)
-    return value, error
-
-
 def say_no(error_msg):
-    ajax_response = {'rc': 1, 'response': error_msg}
-    return HttpResponse(json.dumps(ajax_response))
+    return JsonResponse({'rc': 1, 'response': error_msg})
 
 
 def say_yes():
-    return HttpResponse(json.dumps({'rc': 0, 'response': 'ok'}))
+    return JsonResponse({'rc': 0, 'response': 'ok'})
 
 
-# Deprecated. Not flexible.
-@require_POST
-def update(request):
-    """
-    Generic approach to update a model,\n
-    based on contenttype.
-    """
-    now = datetime.datetime.now()
+@method_decorator(permission_required('testcases.change_testcase'), name='dispatch')
+class UpdateTestCaseStatusView(View):
+    """Updates TestCase.case_status_id. Called from the front-end."""
 
-    data = request.POST.copy()
-    ctype = data.get("content_type")
-    vtype = data.get('value_type', 'str')
-    object_pk_str = data.get("object_pk")
-    field = data.get('field')
-    value = data.get('value')
+    http_method_names = ['post']
 
-    object_pk = [int(a) for a in object_pk_str.split(',')]
+    def post(self, request):
+        status_id = int(request.POST.get('new_value'))
+        case_ids = request.POST.getlist('case[]')
 
-    if not field or not value or not object_pk or not ctype:
-        return say_no(
-            'Following fields are required - content_type, '
-            'object_pk, field and value.')
+        for test_case in TestCase.objects.filter(pk__in=case_ids):
+            test_case.case_status_id = status_id
+            test_case.save()
 
-    # Convert the value type
-    # FIXME: Django bug here: update() keywords must be strings
-    field = str(field)
-
-    value, error = get_value_by_type(value, vtype)
-    if error:
-        return say_no(error)
-    has_perms = check_permission(request, ctype)
-    if not has_perms:
-        return say_no('Permission Dinied.')
-
-    model = apps.get_model(*ctype.split(".", 1))
-    targets = model._default_manager.filter(pk__in=object_pk)
-
-    if not targets:
-        return say_no('No record found')
-    if not hasattr(targets[0], field):
-        return say_no('%s has no field %s' % (ctype, field))
-
-    if hasattr(targets[0], 'log_action'):
-        for target in targets:
-            try:
-                target.log_action(
-                    who=request.user,
-                    action='Field %s changed from %s to %s.' % (
-                        field, getattr(target, field), value
-                    )
-                )
-            except (AttributeError, User.DoesNotExist):
-                pass
-    objects_update(targets, **{field: value})
-
-    if hasattr(model, 'mail_scene'):
-        mail_context = model.mail_scene(objects=targets, field=field)
-        if mail_context:
-            from tcms.core.utils.mailto import mailto
-
-            mail_context['context']['user'] = request.user
-            try:
-                mailto(**mail_context)
-            except Exception:  # nosec:B110:try_except_pass
-                pass
-
-    # Special hacking for updating test case run status
-    if ctype == 'testruns.testcaserun' and field == 'case_run_status':
-        for target in targets:
-            field = 'close_date'
-            target.log_action(
-                who=request.user,
-                action='Field %s changed from %s to %s.' % (
-                    field, getattr(target, field), now
-                )
-            )
-            if target.tested_by != request.user:
-                field = 'tested_by'
-                target.log_action(
-                    who=request.user,
-                    action='Field %s changed from %s to %s.' % (
-                        field, getattr(target, field), request.user
-                    )
-                )
-
-            field = 'assignee'
-            try:
-                assignee = target.assginee
-                if assignee != request.user:
-                    target.log_action(
-                        who=request.user,
-                        action='Field %s changed from %s to %s.' % (
-                            field, getattr(target, field), request.user
-                        )
-                    )
-                    # t.assignee = request.user
-                target.save()
-            except (AttributeError, User.DoesNotExist):
-                pass
-        targets.update(close_date=now, tested_by=request.user)
-    return say_yes()
-
-
-@require_POST
-def update_case_run_status(request):
-    """
-    Update Case Run status.
-    """
-    now = datetime.datetime.now()
-
-    data = request.POST.copy()
-    ctype = data.get("content_type")
-    vtype = data.get('value_type', 'str')
-    object_pk_str = data.get("object_pk")
-    field = data.get('field')
-    value = data.get('value')
-
-    object_pk = [int(a) for a in object_pk_str.split(',')]
-
-    if not field or not value or not object_pk or not ctype:
-        return say_no(
-            'Following fields are required - content_type, '
-            'object_pk, field and value.')
-
-    # Convert the value type
-    # FIXME: Django bug here: update() keywords must be strings
-    field = str(field)
-
-    value, error = get_value_by_type(value, vtype)
-    if error:
-        return say_no(error)
-    has_perms = check_permission(request, ctype)
-    if not has_perms:
-        return say_no('Permission Dinied.')
-
-    model = apps.get_model(*ctype.split(".", 1))
-    targets = model._default_manager.filter(pk__in=object_pk)
-
-    if not targets:
-        return say_no('No record found')
-    if not hasattr(targets[0], field):
-        return say_no('%s has no field %s' % (ctype, field))
-
-    if hasattr(targets[0], 'log_action'):
-        for target in targets:
-            try:
-                target.log_action(
-                    who=request.user,
-                    action='Field {} changed from {} to {}.'.format(
-                        field,
-                        getattr(target, field),
-                        TestCaseRunStatus.id_to_string(value),
-                    )
-                )
-            except (AttributeError, User.DoesNotExist):
-                pass
-    objects_update(targets, **{field: value})
-
-    if hasattr(model, 'mail_scene'):
-        from tcms.core.utils.mailto import mailto
-
-        mail_context = model.mail_scene(objects=targets, field=field)
-        if mail_context:
-            mail_context['context']['user'] = request.user
-            try:
-                mailto(**mail_context)
-            except Exception:  # nosec:B110:try_except_pass
-                pass
-
-    # Special hacking for updating test case run status
-    if ctype == 'testruns.testcaserun' and field == 'case_run_status':
-        for target in targets:
-            field = 'close_date'
-            target.log_action(
-                who=request.user,
-                action='Field %s changed from %s to %s.' % (
-                    field, getattr(target, field), now
-                )
-            )
-            if target.tested_by != request.user:
-                field = 'tested_by'
-                target.log_action(
-                    who=request.user,
-                    action='Field %s changed from %s to %s.' % (
-                        field, getattr(target, field), request.user
-                    )
-                )
-
-            field = 'assignee'
-            try:
-                assignee = target.assginee
-                if assignee != request.user:
-                    target.log_action(
-                        who=request.user,
-                        action='Field %s changed from %s to %s.' % (
-                            field, getattr(target, field), request.user
-                        )
-                    )
-                    # t.assignee = request.user
-                target.save()
-            except (AttributeError, User.DoesNotExist):
-                pass
-        targets.update(close_date=now, tested_by=request.user)
-
-    return HttpResponse(json.dumps({'rc': 0, 'response': 'ok'}))
-
-
-class TestCaseUpdateActions(object):
-    """Actions to update each possible property of TestCases
-
-    Define your own method named _update_[property name] to hold specific
-    update logic.
-    """
-
-    ctype = 'testcases.testcase'
-
-    def __init__(self, request):
-        self.request = request
-        self.target_field = request.POST.get('target_field')
-        self.new_value = request.POST.get('new_value')
-
-    def get_update_action(self):
-        return getattr(self, '_update_%s' % self.target_field, None)
-
-    def update(self):
-        has_perms = check_permission(self.request, self.ctype)
-        if not has_perms:
-            return say_no("You don't have enough permission to update TestCases.")
-
-        action = self.get_update_action()
-        if action is not None:
-            try:
-                resp = action()
-                self._sendmail()
-            except ObjectDoesNotExist as err:
-                return say_no(str(err))
-            except Exception:
-                # TODO: besides this message to users, what happening should be
-                # recorded in the system log.
-                return say_no('Update failed. Please try again or request '
-                              'support from your organization.')
-            else:
-                if resp is None:
-                    resp = say_yes()
-                return resp
-        return say_no('Not know what to update.')
-
-    def get_update_targets(self):
-        """Get selected cases to update their properties"""
-        case_ids = map(int, self.request.POST.getlist('case'))
-        self._update_objects = TestCase.objects.filter(pk__in=case_ids)
-        return self._update_objects
-
-    def get_plan(self, pk_enough=True):
-        try:
-            return plan_from_request_or_none(self.request, pk_enough)
-        except Http404:
-            return None
-
-    def _sendmail(self):
-        mail_context = TestCase.mail_scene(objects=self._update_objects, field=self.target_field)
-        if mail_context:
-            from tcms.core.utils.mailto import mailto
-
-            mail_context['context']['user'] = self.request.user
-            try:
-                mailto(**mail_context)
-            except Exception:  # nosec:B110:try_except_pass
-                pass
-
-    def _update_priority(self):
-        exists = Priority.objects.filter(pk=self.new_value).exists()
-        if not exists:
-            raise ObjectDoesNotExist('The priority you specified to change '
-                                     'does not exist.')
-        self.get_update_targets().update(**{str(self.target_field): self.new_value})
-
-    def _update_default_tester(self):
-        try:
-            user = User.objects.get(Q(username=self.new_value) | Q(email=self.new_value))
-        except User.DoesNotExist:
-            raise ObjectDoesNotExist('Default tester not found!')
-        self.get_update_targets().update(**{str(self.target_field): user.pk})
-
-    def _update_case_status(self):
-        try:
-            new_status = TestCaseStatus.objects.get(pk=self.new_value)
-        except TestCaseStatus.DoesNotExist:
-            raise ObjectDoesNotExist('The status you choose does not exist.')
-
-        update_object = self.get_update_targets()
-        if not update_object:
-            return say_no('No record(s) found')
-
-        for testcase in update_object:
-            if hasattr(testcase, 'log_action'):
-                testcase.log_action(
-                    who=self.request.user,
-                    action='Field %s changed from %s to %s.' % (
-                        self.target_field, testcase.case_status, new_status.name
-                    )
-                )
-        update_object.update(**{str(self.target_field): self.new_value})
-
-        # ###
         # Case is moved between Cases and Reviewing Cases tabs accoding to the
         # change of status. Meanwhile, the number of cases with each status
         # should be updated also.
+        plan_id = request.POST.get("from_plan")
+        test_plan = get_object_or_404(TestPlan, pk=plan_id)
 
-        try:
-            plan = plan_from_request_or_none(self.request)
-        except Http404:
-            return say_no("No plan record found.")
-        else:
-            if plan is None:
-                return say_no('No plan record found.')
+        confirmed_cases_count = test_plan.case.filter(case_status__name='CONFIRMED').count()
+        total_cases_count = test_plan.case.count()
+        review_cases_count = total_cases_count - confirmed_cases_count
 
-        confirm_status_name = 'CONFIRMED'
-        plan.run_case = plan.case.filter(case_status__name=confirm_status_name)
-        plan.review_case = plan.case.exclude(case_status__name=confirm_status_name)
-        run_case_count = plan.run_case.count()
-        case_count = plan.case.count()
-        # FIXME: why not calculate review_case_count or run_case_count by using
-        # substraction, which saves one SQL query.
-        review_case_count = plan.review_case.count()
-
-        return http.JsonResponse({
-            'rc': 0, 'response': 'ok',
-            'run_case_count': run_case_count,
-            'case_count': case_count,
-            'review_case_count': review_case_count,
+        return JsonResponse({
+            'rc': 0,
+            'response': 'ok',
+            'run_case_count': confirmed_cases_count,
+            'case_count': total_cases_count,
+            'review_case_count': review_cases_count,
         })
 
-    def _update_sortkey(self):
+
+@method_decorator(permission_required('testcases.change_testcase'), name='dispatch')
+class UpdateTestCasePriorityView(View):
+    """Updates TestCase.priority_id. Called from the front-end."""
+
+    http_method_names = ['post']
+
+    def post(self, request):
+        priority_id = int(request.POST.get('new_value'))
+        case_ids = request.POST.getlist('case[]')
+
+        for test_case in TestCase.objects.filter(pk__in=case_ids):
+            test_case.priority_id = priority_id
+            test_case.save()
+
+        return JsonResponse({'rc': 0, 'response': 'ok'})
+
+
+@method_decorator(permission_required('testcases.change_testcase'), name='dispatch')
+class UpdateTestCaseActorsView(View):
+    """
+        Updates TestCase.default_tester_id or TestCase.reviewer_id.
+        Called from the front-end.
+    """
+
+    http_method_names = ['post']
+
+    def post(self, request):
+        username = request.POST.get('username')
         try:
-            sortkey = int(self.new_value)
-            if sortkey < 0 or sortkey > 32300:
-                return say_no('New sortkey is out of range [0, 32300].')
-        except ValueError:
-            return say_no('New sortkey is not an integer.')
-        plan = plan_from_request_or_none(self.request, pk_enough=True)
-        if plan is None:
-            return say_no('No plan record found.')
-        update_targets = self.get_update_targets()
+            user = User.objects.get(username=username)
+        except User.DoesNotExist:
+            try:
+                user = User.objects.get(email=username)
+            except User.DoesNotExist:
+                return JsonResponse({'rc': 1,
+                                     'response': _('User %s not found!' % username)},
+                                    status=HTTPStatus.NOT_FOUND)
 
-        # ##
-        # MySQL does not allow to exeucte UPDATE statement that contains
-        # subquery querying from same table. In this case, OperationError will
-        # be raised.
-        offset = 0
-        step_length = 500
-        while True:
-            sub_cases = update_targets[offset:offset + step_length]
-            case_pks = [case.pk for case in sub_cases]
-            if not case_pks:
-                break
-            TestCasePlan.objects.filter(plan=plan,
-                                        case__in=case_pks).update(**{self.target_field: sortkey})
-            # Move to next batch of cases to change.
-            offset += step_length
+        what_to_update = request.POST.get('what_to_update')
+        case_ids = request.POST.getlist('case[]')
+        for test_case in TestCase.objects.filter(pk__in=case_ids):
+            if what_to_update == 'default_tester':
+                test_case.default_tester_id = user.pk
+            elif what_to_update == 'reviewer':
+                test_case.reviewer_id = user.pk
 
-    def _update_reviewer(self):
-        reviewers = User.objects.filter(username=self.new_value).values_list('pk', flat=True)
-        if not reviewers:
-            err_msg = 'Reviewer %s is not found' % self.new_value
-            raise ObjectDoesNotExist(err_msg)
-        self.get_update_targets().update(**{str(self.target_field): reviewers[0]})
+            test_case.save()
 
-
-# NOTE: what permission is necessary
-# FIXME: find a good chance to map all TestCase property change request to this
-@require_POST
-def update_cases_default_tester(request):
-    """Update default tester upon selected TestCases"""
-    proxy = TestCaseUpdateActions(request)
-    return proxy.update()
-
-
-UPDATE_CASES_PRIORITY = update_cases_default_tester
-UPDATE_CASES_CASE_STATUS = update_cases_default_tester
-UPDATE_CASES_SORTKEY = update_cases_default_tester
-UPDATE_CASES_REVIEWER = update_cases_default_tester
+        return JsonResponse({'rc': 0, 'response': 'ok'})
 
 
 @require_POST
@@ -797,12 +419,4 @@ def get_prod_related_obj_json(request):
         res = get_prod_related_objs(p_pks, target)
     else:
         res = []
-    return HttpResponse(json.dumps(res))
-
-
-def objects_update(objects, **kwargs):
-    objects.update(**kwargs)
-    kwargs['instances'] = objects
-    if objects.model.__name__ == TestCaseRun.__name__ and kwargs.get(
-            'case_run_status', None):
-        POST_UPDATE_SIGNAL.send(sender=None, **kwargs)
+    return JsonResponse(res)

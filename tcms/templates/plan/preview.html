@@ -37,7 +37,7 @@
 		<div class="listinfo">
 			<div class="title">Document</div>
 			<div class="contenttext">
-				{{ test_plan.latest_text.plan_text|safe }}
+				{{ test_plan.text|safe }}
 			</div>
 		</div>
         <div class="clear"></div>
@@ -46,5 +46,5 @@
 <hr />
 {% endif %}
 {% empty %}
-{"msg":"The plan you specific does not exist in database."}
+{"msg":"The plan you specified does not exist in the database."}
 {% endfor %}

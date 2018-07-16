@@ -102,8 +102,6 @@ var default_messages = {
       change_user_group: '/management/account/$id/changegroup/',
       change_user_status: '/management/account/$id/changestatus/',
 
-      get_product_info: '/management/getinfo/',
-
       modify_plan : '/plan/$id/modify/',
       plan_assign_case: '/plan/$id/assigncase/apply/',
       plans: '/plans/',
@@ -322,35 +320,15 @@ function getBuildsByProductId(allow_blank, product_field, build_field) {
   var success = function(t) {
     returnobj = jQ.parseJSON(t.responseText);
 
-    debug_output('Get builds succeed get ready to replace the select widget inner html');
-
     set_up_choices(
       build_field,
       returnobj.map(function(o) { return [o.pk, o.fields.name]; }),
       allow_blank
     );
-
-    debug_output('Update builds completed');
   };
 
-  var failure = function(t) {
-    window.alert("Update builds and envs failed");
-  };
-
-  var url = Nitrate.http.URLConf.reverse({ name: 'get_product_info' });
-  jQ.ajax({
-    'url': url,
-    'type': 'GET',
-    'data': {'info_type': 'builds', 'product_id': product_id, 'is_active': true},
-    'success': function (data, textStatus, jqXHR) {
-      success(jqXHR);
-    },
-    'error': function (jqXHR, textStatus, errorThrown) {
-      if (jqXHR.readyState != 0 && errorThrown != "") {
-        failure();
-      }
-    }
-  });
+  getInfo({'info_type': 'builds', 'product_id': product_id, 'is_active': true},
+          success);
 }
 
 
@@ -376,8 +354,6 @@ function getVersionsByProductId(allow_blank, product_field, version_field) {
   var success = function(t) {
     returnobj = jQ.parseJSON(t.responseText);
 
-    debug_output('Get versions succeed get ready to replace the select widget inner html');
-
     set_up_choices(
       version_field,
       returnobj.map(function(o) {
@@ -387,24 +363,8 @@ function getVersionsByProductId(allow_blank, product_field, version_field) {
     );
   };
 
-  var failure = function(t) {
-    window.alert("Update versions failed");
-  };
-
-  var url = Nitrate.http.URLConf.reverse({ name: 'get_product_info' });
-  jQ.ajax({
-    'url': url,
-    'type': 'GET',
-    'data': {'info_type': 'versions', 'product_id': product_id},
-    'success': function (data, textStatus, jqXHR) {
-      success(jqXHR);
-    },
-    'error': function (jqXHR, textStatus, errorThrown) {
-      if (jqXHR.readyState != 0 && errorThrown != "") {
-        failure();
-      }
-    }
-  });
+  getInfo({'info_type': 'versions', 'product_id': product_id},
+          success);
 }
 
 function getComponentsByProductId(allow_blank, product_field, component_field, callback, parameters) {
@@ -453,23 +413,7 @@ function getComponentsByProductId(allow_blank, product_field, component_field, c
     }
   };
 
-  var failure = function(t) { window.alert("Update components failed"); };
-
-  var url = Nitrate.http.URLConf.reverse({ name: 'get_product_info' });
-
-  jQ.ajax({
-    'url': url,
-    'type': 'GET',
-    'data': parameters,
-    'success': function (data, textStatus, jqXHR) {
-      success(jqXHR);
-    },
-    'error': function (jqXHR, textStatus, errorThrown) {
-      if (jqXHR.readyState != 0 && errorThrown != "") {
-        failure();
-      }
-    }
-  });
+  getInfo(parameters, success);
 }
 
 function getCategorisByProductId(allow_blank, product_field, category_field) {
@@ -488,8 +432,6 @@ function getCategorisByProductId(allow_blank, product_field, category_field) {
     }
   }
 
-  debug_output('Get categories from product ' + product_id);
-
   if (product_id === '') {
     jQ(category_field).html('<option value="">---------</option>');
     return true;
@@ -505,26 +447,10 @@ function getCategorisByProductId(allow_blank, product_field, category_field) {
       }),
       allow_blank
     );
-
-    debug_output('Get categories succeed get ready to replace the select widget inner html');
   };
 
-  var failure = function(t) { alert("Update category failed"); };
-
-  var url = Nitrate.http.URLConf.reverse({ name: 'get_product_info' });
-  jQ.ajax({
-    'url': url,
-    'type': 'GET',
-    'data': {'info_type': 'categories', 'product_id': product_id},
-    'success': function (data, textStatus, jqXHR) {
-      success(jqXHR);
-    },
-    'error': function (jqXHR, textStatus, errorThrown) {
-      if (jqXHR.readyState != 0 && errorThrown != "") {
-        failure();
-      }
-    }
-  });
+  getInfo({'info_type': 'categories', 'product_id': product_id},
+          success);
 }
 
 function checkProductField(product_field) {
@@ -592,13 +518,6 @@ function bind_component_selector_to_product(allow_blank, load, product_field, co
   }
 }
 
-// debug_output function is implement with firebug plugin for firefox
-function debug_output(value) {
-  try {
-    console.log(value);
-  } catch (err) {}
-}
-
 function myCustomURLConverter(url, node, on_save) {
   return url;
 }
@@ -655,27 +574,16 @@ function constructTagZone(container, parameters) {
   jQ(container).html('<div class="ajax_loading"></div>');
 
   var complete = function(t) {
-    var url = Nitrate.http.URLConf.reverse({ name: 'get_product_info' });
-
     jQ('#id_tags').autocomplete({
       'source': function(request, response) {
-        jQ.ajax({
-          'url': url,
-          'data': {
-            'name__startswith': request.term,
-            'info_type': 'tags',
-            'format': 'ulli',
-            'field': 'tag__name'
-          },
-          'success': function(data) {
-            var processedData = [];
-            if (data.indexOf('<li>') > -1) {
-              processedData = data.slice(data.indexOf('<li>') + 4, data.lastIndexOf('</li>'))
-              .split('<li>').join('').split('</li>');
-            }
-            response(processedData);
-          }
-        });
+        getInfo({'info_type': 'tags', 'name__startswith': request.term},
+                function(data) {
+                    var processedData = [];
+                    jQ.parseJSON(data.responseText).forEach(function (element){
+                        processedData.push(element.fields.name);
+                    });
+                    response(processedData);
+                });
       },
       'minLength': 2,
       'appendTo': '#id_tags_autocomplete'
@@ -785,7 +693,7 @@ function updateCommentsCount(caseId, increase) {
   }
 }
 
-function previewPlan(parameters, action, callback, notice, s, c) {
+function previewPlan(parameters, action, callback) {
   var dialog = getDialog();
 
   clearDialog();
@@ -796,14 +704,7 @@ function previewPlan(parameters, action, callback, notice, s, c) {
 
   var url = '/plans/';
   var success = function(t) {
-    // Not a very general way to resolve...
-    var text = t.responseText;
-    try {
-      notice = "";
-    } catch (e) {
-      // do nothing
-    }
-    var form = constructForm(text, action, callback, notice, s, c);
+    var form = constructForm(t.responseText, action, callback);
     jQ(dialog).html(form);
   };
 
@@ -820,147 +721,21 @@ function previewPlan(parameters, action, callback, notice, s, c) {
   });
 }
 
-function getInfo(parameters, callback, container, allow_blank, format) {
-  debug_output('Get info ' + parameters);
-
-  var success = function(t) {
-    if (callback) {
-      debug_output("Starting GetInfo callback");
-      callback(t, allow_blank, container);
-      debug_output("GetInfo callback completed");
-    }
-
-    debug_output("GetInfo " + parameters.info_type + " successful");
-  };
-
-  var failure = function(t) {
-    window.alert("Get info " + parameters.info_type + " failed");
-    return false;
-  };
-
-  if (format) {
-    parameters.format = format;
-  }
-
-  var url = Nitrate.http.URLConf.reverse({ name: 'get_product_info' });
+function getInfo(parameters, callback) {
   jQ.ajax({
-    'url': url,
+    'url': '/management/getinfo/',
     'type': 'GET',
     'data': parameters,
     'success': function (data, textStatus, jqXHR) {
-      success(jqXHR);
+        callback(jqXHR);
     },
     'error': function (jqXHR, textStatus, errorThrown) {
-      failure();
+        window.alert("Get info " + parameters.info_type + " failed");
+        return false;
     }
   });
 }
 
-
-function updateRunStatus(content_type, object_pk, field, value, value_type, callback) {
-  if (!value_type) {
-    var value_type = 'str';
-  }
-  var url = '/ajax/update/case-run-status';
-
-  if (typeof object_pk === 'object') {
-    object_pk = object_pk.join(',');
-  }
-  var parameters = {
-    'content_type': content_type,
-    'object_pk': object_pk,
-    'field': field,
-    'value': value,
-    'value_type': value_type
-  };
-  jQ.ajax({
-    'url': url,
-    'type': 'POST',
-    'data': parameters,
-    'success': function (data, textStatus, jqXHR) {
-      callback();
-    },
-    'error': function (jqXHR, textStatus, errorThrown) {
-      json_failure(jqXHR);
-    }
-  });
-}
-
-function updateObject(content_type, object_pk, field, value, value_type, callback) {
-  if (!value_type) {
-    var value_type = 'str';
-  }
-
-  var url = '/ajax/update/';
-
-  if (typeof object_pk === 'object') {
-	object_pk = object_pk.join(',');
-  }
-
-  var parameters = {
-    'content_type': content_type,
-    'object_pk': object_pk,
-    'field': field,
-    'value': value,
-    'value_type': value_type
-  };
-
-  jQ.ajax({
-    'url': url,
-    'type': 'POST',
-    'data': parameters,
-    'success': function (data, textStatus, jqXHR) {
-      callback(jqXHR);
-    },
-    'error': function (jqXHR, textStatus, errorThrown) {
-      json_failure(jqXHR);
-    }
-  });
-}
-
-/*
- *  Arguments:
- *  parameters: Hash - Use for getInfo method
- *  content_type: String - use for updateObject method
- *  object_pk: Int/Array - use for updateObject method
- *  field: String - use for updateObject method
- *  callback: Function - use for updateObject method
- */
-function getInfoAndUpdateObject(parameters, content_type, object_pks, field, callback) {
-  var refresh_window = function(t) {
-    var returnobj = jQ.parseJSON(t.responseText);
-    if (returnobj.rc !== 0) {
-      window.alert(returnobj.response);
-      return false;
-    }
-
-    window.location.reload();
-  };
-
-  var get_info_callback = function(t) {
-    var returnobj = jQ.parseJSON(t.responseText);
-
-    // FIXME: Display multiple items and let user to select one
-    if (returnobj.length === 0) {
-      window.alert('Nothing found in database');
-      return false;
-    }
-
-    if (returnobj.length > 1) {
-      window.alert('Mutiple instances reached, please define the condition more clear.');
-      return false;
-    }
-
-    var value = returnobj[0].pk;
-
-    if (!callback) {
-      callback = refresh_window;
-    }
-    updateObject(content_type, object_pks, field, value, 'str', callback);
-  };
-
-  getInfo(parameters, get_info_callback);
-}
 
 function getDialog(element) {
   if (!element) {

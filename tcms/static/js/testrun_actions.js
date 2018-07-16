@@ -61,10 +61,6 @@ Nitrate.TestRuns.List.on_load = function() {
 
 Nitrate.TestRuns.Details.on_load = function() {
   // Observe the interface buttons
-  if (jQ('#id_sort').length) {
-    jQ('#id_sort').bind('click', taggleSortCaseRun);
-  }
-
   jQ('#id_check_all_button').bind('click', function(e) {
     toggleAllCheckBoxes(this, 'id_table_cases', 'case_run');
   });
@@ -285,10 +281,6 @@ Nitrate.TestRuns.Details.on_load = function() {
   jQ('.js-status-subtotal').bind('click', function() {
     showCaseRunsWithSelectedStatus(jQ('#id_filter')[0], jQ(this).data('param'));
   });
-  jQ('.js-change-order').bind('click', function() {
-    var params = jQ(this).data('params');
-    changeCaseRunOrder(params[0], params[1], params[2]);
-  });
 };
 
 Nitrate.TestRuns.New.on_load = function() {
@@ -413,6 +405,21 @@ Nitrate.TestRuns.AssignCase.on_load = function() {
   });
 };
 
+
+function updateRunStatus(object_pk, value, callback) {
+  jQ.ajax({
+    'url': '/run/case-run-update-status/',
+    'type': 'POST',
+    'data': {'object_pk': object_pk, 'status_id': value },
+    'success': function (data, textStatus, jqXHR) {
+      callback();
+    },
+    'error': function (jqXHR, textStatus, errorThrown) {
+      json_failure(jqXHR);
+    }
+  });
+}
+
 var updateCaseRunStatus = function(e) {
   e.stopPropagation();
   e.preventDefault();
@@ -421,11 +428,8 @@ var updateCaseRunStatus = function(e) {
   var title = parent.prev();
   var link = title.find('.expandable')[0];
   var parameters = Nitrate.Utils.formSerialize(this);
-  var ctype = parameters['content_type'];
   var object_pk = parameters['object_pk'];
-  var field = parameters['field'];
   var value = parameters['value'];
-  var vtype = 'int';
 
   // Callback when
   var callback = function(t) {
@@ -489,87 +493,10 @@ var updateCaseRunStatus = function(e) {
     var ajax_loading = getAjaxLoading();
     ajax_loading.id = 'id_loading_' + parameters['case_id'];
     container.html(ajax_loading);
-    updateRunStatus(ctype, object_pk, field, value, vtype, callback);
+    updateRunStatus([object_pk], value, callback);
   }
 };
 
-function changeCaseRunOrder(run_id, case_run_id, sort_key) {
-  var nsk = window.prompt('Enter your new order number', sort_key); // New sort key
-
-  if (!nsk) {
-    return false;
-  }
-
-  if (isNaN(nsk)) {
-    window.alert('The value must be a integer number and limit between 0 to 32300.');
-    return false;
-  }
-
-  if (nsk > 32300 || nsk < 0) {
-    window.alert('The value must be a integer number and limit between 0 to 32300.');
-    return false;
-  }
-
-  if (nsk == sort_key) {
-    window.alert('Nothing changed');
-    return false;
-  }
-
-  // Succeed callback
-  var s_callback = function(t) {
-    var returnobj = jQ.parseJSON(t.responseText);
-
-    if (returnobj.response === 'ok') {
-      window.location.reload();
-    } else {
-      window.alert(returnobj.response);
-    }
-  };
-
-  var ctype = 'testruns.testcaserun';
-  var object_pk = case_run_id;
-  var field = 'sortkey';
-  var value = nsk;
-  var vtype = 'int';
-
-  updateObject(ctype, object_pk, field, value, vtype, s_callback);
-}
-
-function taggleSortCaseRun(event) {
-  var element = event.target;
-
-  if (element.innerHTML !== 'Done Sorting') {
-    jQ('#id_blind_all_link').remove(); // Remove blind all link
-
-    // Remove case text
-    jQ('#id_table_cases .hide').remove();
-
-    // Remove blind down arrow link
-    jQ('#id_table_cases .blind_icon').remove();
-
-    // Use the title to replace the blind down title link
-    jQ('#id_table_cases .blind_title_link').each(function(index) {
-      jQ(this).replaceWith((jQ('<span>')).html(this.innerHTML));
-    });
-
-    // Use the sortkey content to replace change sort key link
-    jQ('#id_table_cases .mark').each(function(index) {
-      jQ(this).parent().html(this.innerHTML);
-    });
-
-    jQ('#id_table_cases .case_content').remove();
-    jQ('#id_table_cases .expandable').unbind();
-
-    // init the tableDnD object
-    var table = document.getElementById('id_table_cases');
-    var tableDnD = new TableDnD();
-    tableDnD.init(table);
-    jQ('#id_sort').html('Done Sorting');
-  } else {
-    jQ('#id_table_cases input[type=checkbox]').attr({ 'checked': true, 'disabled': false });
-    postToURL('ordercaserun/', serializeCaseRunFromInputList('id_table_cases', 'case_run'));
-  }
-}
 
 function constructCaseRunZone(container, title_container, case_id) {
   var link = jQ(title_container).find('.expandable')[0];
@@ -849,8 +776,6 @@ function editValue(form,hidebox,selectid,submitid) {
 
   var success = function(t) {
     var returnobj = jQ.parseJSON(t.responseText);
-    debug_output('Get environments succeed get ready to replace the select widget inner html');
-
     var current_value = jQ("input[type=hidden][name=current_run_env]:eq(0)", form);
     var excludeValues = [];
     jQ("input[type=hidden][name=current_run_env]").each(function(index, element) {
@@ -871,20 +796,7 @@ function editValue(form,hidebox,selectid,submitid) {
     set_up_choices(jQ('#' + selectid)[0], values, 0);
   };
 
-  var failure = function(t) { window.alert("Update values failed"); };
-
-  var url = '/management/getinfo/';
-  jQ.ajax({
-    'url': url,
-    'type': 'GET',
-    'data': {'info_type': 'env_values', 'env_property_id': env_property_id},
-    'success': function(data, textStatus, jqXHR) {
-      success(jqXHR);
-    },
-    'error': function(jqXHR, textStatus, errorThrown) {
-      failure();
-    }
-  });
+  getInfo({'info_type': 'env_values', 'env_property_id': env_property_id}, success);
 }
 
 function submitValue(run_id,value,hidebox,select_field,submitid) {
@@ -898,7 +810,6 @@ function submitValue(run_id,value,hidebox,select_field,submitid) {
     }
     return true;
   });
-  debug_output(dup_values);
   if (jQ.inArray(select_field.value, dup_values) >= 0) {
     window.alert("The value is exist for this run");
     return false;
@@ -986,20 +897,7 @@ function addProperty(run_id,env_group_id) {
     change_value(jQ('#id_add_env_property').val(), 'id_add_env_value');
   };
 
-  var failure = function(t) { window.alert("Update properties failed"); };
-
-  var url = '/management/getinfo/';
-  jQ.ajax({
-    'url': url,
-    'type': 'GET',
-    'data': {'info_type': 'env_properties', 'env_group_id': env_group_id},
-    'success': function (data, textStatus, jqXHR) {
-      success(jqXHR);
-    },
-    'error': function (jqXHR, textStatus, errorThrown) {
-      failure();
-    }
-  });
+  getInfo({'info_type': 'env_properties', 'env_group_id': env_group_id}, success);
 
   jQ('#id_add_env_property').bind('change', function(e) {
     change_value(jQ('#id_add_env_property').val(), 'id_add_env_value');
@@ -1020,20 +918,7 @@ function change_value(env_property_id,selectid) {
     set_up_choices(jQ('#' + selectid)[0], values, 0);
   };
 
-  var failure = function(t) { window.alert("Update values failed"); };
-
-  var url = '/management/getinfo/';
-  jQ.ajax({
-    'url': url,
-    'type': 'GET',
-    'data': {'info_type': 'env_values', 'env_property_id': env_property_id},
-    'success': function (data, textStatus, jqXHR) {
-      success(jqXHR);
-    },
-    'error': function (jqXHR, textStatus, errorThrown) {
-      failure();
-    }
-  });
+  getInfo({'info_type': 'env_values', 'env_property_id': env_property_id}, success);
 }
 
 function add_property_to_env(run_id, env_value_id) {
@@ -1165,13 +1050,17 @@ function changeCaseRunAssignee() {
     return false;
   }
 
-  var parameters = {'info_type': 'users', 'username': p};
-  getInfoAndUpdateObject(
-    parameters,
-    'testruns.testcaserun',
-    serializeCaseRunFromInputList(jQ('#id_table_cases')[0]),
-    'assignee'
-  );
+  jQ.ajax({
+    'url': '/run/update-assignee/',
+    'type': 'POST',
+    'data': { ids: runs, assignee: p },
+    'success': function (data, textStatus, jqXHR) {
+      window.location.reload();
+    },
+    'error': function (jqXHR, textStatus, errorThrown) {
+      json_failure(jqXHR);
+    }
+  });
 }
 
 function serializeCaseRunFromInputList(table, name) {
@@ -1409,7 +1298,7 @@ jQ(document).ready(function(){
     if (!window.confirm(default_messages.confirm.change_case_status)) {
       return false;
     }
-    updateObject('testruns.testcaserun', object_pks, 'case_run_status', option, 'int', reloadWindow);
+    updateRunStatus(object_pks, option, reloadWindow);
   });
 });
 

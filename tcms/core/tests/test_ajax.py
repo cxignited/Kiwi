@@ -55,22 +55,6 @@ class TestInfo(test.TestCase):
         response = self.client.get(url)
         self.assertEqual(200, response.status_code)
 
-    def test_with_ulli_format(self):
-        """ When a request comes with info_type=categories, and format=ulli for given product_id,
-            we expect to receive all categories for that product, rendered as HTML unordered list
-        """
-
-        url = '%s?info_type=categories&product_id=%d&format=ulli' % (reverse('ajax-info'),
-                                                                     self.product.pk)
-
-        response = self.client.get(url)
-
-        for category in self.categories:
-            self.assertContains(response, '<li>' + category.name + '</li>')
-
-        self.assertContains(response, '<ul>')
-        self.assertContains(response, '</ul>')
-
     def test_with_unrecognisable_info_type(self):
         """ When a request comes with invalid info_type,
             we expect to receive response containing the 'Unrecognizable info-type' error message
@@ -218,7 +202,7 @@ class Test_InfoObjects(test.TestCase):
         self.assertNotIn(self.version_two, test_versions)
 
 
-class Test_TestCaseUpdateActions(BasePlanCase):
+class Test_TestCaseUpdates(BasePlanCase):
     """
         Tests for TC bulk update actions triggered via
         TP sub-menu.
@@ -229,20 +213,19 @@ class Test_TestCaseUpdateActions(BasePlanCase):
 
     @classmethod
     def setUpTestData(cls):
-        super(Test_TestCaseUpdateActions, cls).setUpTestData()
+        super().setUpTestData()
         initiate_user_with_default_setups(cls.tester)
+        cls.url = reverse('ajax.update.cases-actor')
 
     def setUp(self):
         super().setUp()
         self._assert_default_tester_is(None)
 
     def test_update_default_tester_via_username(self):
-        url = reverse('ajax-update_cases_default_tester')
-        response = self.client.post(url, {
-            'from_plan': self.plan.pk,
-            'case': [case.pk for case in TestCase.objects.filter(plan=self.plan)],
-            'target_field': 'default_tester',
-            'new_value': self.tester.username
+        response = self.client.post(self.url, {
+            'case[]': [case.pk for case in TestCase.objects.filter(plan=self.plan)],
+            'what_to_update': 'default_tester',
+            'username': self.tester.username
         })
 
         self.assertEqual(HTTPStatus.OK, response.status_code)
@@ -254,12 +237,10 @@ class Test_TestCaseUpdateActions(BasePlanCase):
 
     def test_update_default_tester_via_email(self):
         # test for https://github.com/kiwitcms/Kiwi/issues/85
-        url = reverse('ajax-update_cases_default_tester')
-        response = self.client.post(url, {
-            'from_plan': self.plan.pk,
-            'case': [case.pk for case in TestCase.objects.filter(plan=self.plan)],
-            'target_field': 'default_tester',
-            'new_value': self.tester.email
+        response = self.client.post(self.url, {
+            'case[]': [case.pk for case in TestCase.objects.filter(plan=self.plan)],
+            'what_to_update': 'default_tester',
+            'username': self.tester.email
         })
 
         self.assertEqual(HTTPStatus.OK, response.status_code)
@@ -270,12 +251,10 @@ class Test_TestCaseUpdateActions(BasePlanCase):
         self._assert_default_tester_is(self.tester)
 
     def test_update_default_tester_non_existing_user(self):
-        url = reverse('ajax-update_cases_default_tester')
-        response = self.client.post(url, {
-            'from_plan': self.plan.pk,
-            'case': [case.pk for case in TestCase.objects.filter(plan=self.plan)],
-            'target_field': 'default_tester',
-            'new_value': 'user which doesnt exist'
+        response = self.client.post(self.url, {
+            'case[]': [case.pk for case in TestCase.objects.filter(plan=self.plan)],
+            'what_to_update': 'default_tester',
+            'usernmae': 'user which doesnt exist'
         })
 
         self.assertEqual(HTTPStatus.OK, response.status_code)

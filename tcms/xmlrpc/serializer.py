@@ -351,7 +351,7 @@ class QuerySetBasedXMLRPCSerializer(XMLRPCSerializer):
                 # If no fields mapping, just use the original row as the
                 # serialization result, and no data format conversion is
                 # required obviously
-                new_serialized_data.update(row)
+                new_serialized_data.update(row)  # pylint: disable=objects-update-used
 
             # Attach values of each ManyToManyField field
             # Lazy ManyToManyField query, to avoid query on ManyToManyFields if
@@ -385,6 +385,7 @@ class TestPlanXMLRPCSerializer(QuerySetBasedXMLRPCSerializer):
         'extra_link': ('extra_link', do_nothing),
         'is_active': ('is_active', do_nothing),
         'name': ('name', do_nothing),
+        'text': ('text', do_nothing),
         'plan_id': ('plan_id', do_nothing),
 
         'author': ('author_id', do_nothing),

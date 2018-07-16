@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
 import datetime
-import json
 import itertools
 
 from django.conf import settings
@@ -11,7 +10,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ObjectDoesNotExist
 from django.urls import reverse
 from django.db.models import Count
-from django.http import HttpResponseRedirect, HttpResponse, Http404
+from django.http import HttpResponseRedirect, HttpResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.template.loader import render_to_string
 from django.utils.translation import ugettext_lazy as _
@@ -163,19 +162,23 @@ def automated(request):
         tcs = get_selected_testcases(request)
 
         if form.cleaned_data['a'] == 'change':
+            is_automated = 0
+            is_auto_proposed = False
             if isinstance(form.cleaned_data['is_automated'], int):
-                # FIXME: inconsistent operation updating automated property
-                # upon TestCases. Other place to update property upon
-                # TestCase via Model.save, that will trigger model
-                #        singal handlers.
-                tcs.update(is_automated=form.cleaned_data['is_automated'])
+                is_automated = form.cleaned_data['is_automated']
+
             if isinstance(form.cleaned_data['is_automated_proposed'], bool):
-                tcs.update(is_automated_proposed=form.cleaned_data['is_automated_proposed'])
+                is_auto_proposed = form.cleaned_data['is_automated_proposed']
+
+            for test_case in tcs:
+                test_case.is_automated = is_automated
+                test_case.is_automated_proposed = is_auto_proposed
+                test_case.save()
     else:
         ajax_response['rc'] = 1
         ajax_response['response'] = form_errors_to_list(form)
 
-    return HttpResponse(json.dumps(ajax_response))
+    return JsonResponse(ajax_response)
 
 
 @permission_required('testcases.add_testcase')
@@ -1272,7 +1275,7 @@ def text_history(request, case_id, template_name='case/history.html'):
                             'author__email',
                             'create_date').order_by('-case_text_version')
 
-    context_data = {
+    context = {
         'testplan': tp,
         'testcase': tc,
         'test_case_texts': tctxts.iterator(),
@@ -1286,7 +1289,7 @@ def text_history(request, case_id, template_name='case/history.html'):
                                            'setup',
                                            'breakdown')
 
-        context_data.update({
+        context.update({
             'select_case_text_version': case_text_version,
             'text_to_show': text_to_show.iterator(),
         })
@@ -1295,7 +1298,7 @@ def text_history(request, case_id, template_name='case/history.html'):
         # selected text history
         pass
 
-    return render(request, template_name, context_data)
+    return render(request, template_name, context)
 
 
 @permission_required('testcases.add_testcase')
@@ -1478,13 +1481,13 @@ def clone(request, template_name='case/clone.html'):
         search_plan_form.populate(product_id=tp.product_id)
 
     submit_action = request_data.get('submit', None)
-    context_data = {
+    context = {
         'test_plan': tp,
         'search_form': search_plan_form,
         'clone_form': clone_form,
         'submit_action': submit_action,
     }
-    return render(request, template_name, context_data)
+    return render(request, template_name, context)
 
 
 @require_POST
@@ -1519,22 +1522,22 @@ def attachment(request, case_id, template_name='case/attachment.html'):
     tc = get_object_or_404(TestCase, case_id=case_id)
     tp = plan_from_request_or_none(request)
 
-    context_data = {
+    context = {
         'testplan': tp,
         'testcase': tc,
         'limit': settings.FILE_UPLOAD_MAX_SIZE,
     }
-    return render(request, template_name, context_data)
+    return render(request, template_name, context)
 
 
 def get_log(request, case_id, template_name="management/get_log.html"):
     """Get the case log"""
     tc = get_object_or_404(TestCase, case_id=case_id)
 
-    context_data = {
+    context = {
         'object': tc
     }
-    return render(request, template_name, context_data)
+    return render(request, template_name, context)
 
 
 @permission_required('testcases.change_bug')
@@ -1561,11 +1564,11 @@ def bug(request, case_id, template_name='case/get_bug.html'):
             return HttpResponse(form.as_p())
 
         def render(self, response=None):
-            context_data = {
+            context = {
                 'test_case': self.case,
                 'response': response
             }
-            return render(request, template_name, context_data)
+            return render(request, template_name, context)
 
         def add(self):
             # FIXME: It's may use ModelForm.save() method here.
@@ -1625,31 +1628,31 @@ def plan(request, case_id):
     if request.GET.get('a'):
         # Search the plans from database
         if not request.GET.getlist('plan_id'):
-            context_data = {
+            context = {
                 'message': 'The case must specific one plan at leaset for '
                            'some action',
             }
             return render(
                 request,
                 'case/get_plan.html',
-                context_data)
+                context)
 
         tps = TestPlan.objects.filter(pk__in=request.GET.getlist('plan_id'))
 
         if not tps:
-            context_data = {
+            context = {
                 'testplans': tps,
                 'message': 'The plan id are not exist in database at all.'
             }
             return render(
                 request,
                 'case/get_plan.html',
-                context_data)
+                context)
 
         # Add case plan action
         if request.GET['a'] == 'add':
             if not request.user.has_perm('testcases.add_testcaseplan'):
-                context_data = {
+                context = {
                     'test_case': tc,
                     'test_plans': tps,
                     'message': 'Permission denied',
@@ -1657,7 +1660,7 @@ def plan(request, case_id):
                 return render(
                     request,
                     'case/get_plan.html',
-                    context_data)
+                    context)
 
             for tp in tps:
                 tc.add_to_plan(tp)
@@ -1665,7 +1668,7 @@ def plan(request, case_id):
         # Remove case plan action
         if request.GET['a'] == 'remove':
             if not request.user.has_perm('testcases.change_testcaseplan'):
-                context_data = {
+                context = {
                     'test_case': tc,
                     'test_plans': tps,
                     'message': 'Permission denied',
@@ -1673,7 +1676,7 @@ def plan(request, case_id):
                 return render(
                     request,
                     'case/get_plan.html',
-                    context_data)
+                    context)
 
             for tp in tps:
                 tc.remove_plan(tp)
@@ -1683,11 +1686,11 @@ def plan(request, case_id):
                              'type',
                              'product')
 
-    context_data = {
+    context = {
         'test_case': tc,
         'test_plans': tps,
     }
     return render(
         request,
         'case/get_plan.html',
-        context_data)
+        context)

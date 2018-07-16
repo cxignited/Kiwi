@@ -3,6 +3,7 @@ from django.urls import reverse
 from django.contrib import admin
 from django.http import HttpResponseRedirect
 
+from tcms.core.history import ReadOnlyHistoryAdmin
 from tcms.testplans.models import PlanType, TestPlan
 
 
@@ -11,7 +12,7 @@ class PlanTypeAdmin(admin.ModelAdmin):
     list_display = ('id', 'name', 'description')
 
 
-class TestPlanAdmin(admin.ModelAdmin):
+class TestPlanAdmin(ReadOnlyHistoryAdmin):
     """
         Does not allow adding new or changing plans.
     """

@@ -39,7 +39,6 @@ Nitrate.TestPlans.Instance = {
 	<input type="hidden" name="content_type" value="testplans.testplan" />
 	<input type="hidden" name="object_pk" value="{{ test_plan.pk }}" />
 	<input type="hidden" name="name" value="{{ test_plan.name }}" />
-	{# <input type="hidden" name="description" value="{{ test_plan.latest_text.plan_text }}" /> #}
 {% endblock %}
 
 {% block contents %}
@@ -54,11 +53,6 @@ Nitrate.TestPlans.Instance = {
 		<span id="id_buttons" class="button">
 			<input id="btn_edit" type="button" value="Edit Plan " title="Edit test plan" data-param="{% url 'plan-edit' test_plan.plan_id %}" {% if perms.testplans.change_testplan %}{% else%}disabled{% endif %}>
 			<input id="btn_clone" type="button" value="Clone Plan" title="Clone this plan to other product" data-params='["{% url "plans-clone" %}", {{ test_plan.plan_id }}]' {% if perms.testplans.add_testplan %}{% else %}disabled{% endif %}>
-			{% if test_plan.is_active %}
-			<input id="btn_disable" type="button" value="Disable Plan " title="Disabled this plan" {% if not perms.testplans.change_testplan %}disabled="true"{% endif %}>
-			{% else %}
-			<input id="btn_enable" type="button" value="Enable Plan " title="Enabled this plan" {% if not perms.testplans.change_testplan %}disabled="true"{% endif %}>
-			{% endif %}
 			<input id="btn_print" type="button" value="Print Plan "
                    title="Print Plan"
                    data-params='["{% url "plans-printable" %}", {{ test_plan.pk }}]'>
@@ -107,7 +101,7 @@ Nitrate.TestPlans.Instance = {
 					<span class="blue strong"><a href="{% url "plans-all" %}?action=search&name__icontains=&author__email__startswith=&owner__username__startswith=&type=&tag__name__in=&case__default_tester__username__startswith=&product=&product_version=&env_group={{ env_group.id }}&create_date__gte=&create_date__lte=" title="Search plans of use {{ env_group.name }} ">{{ env_group.name }}</a></span>
 					{% endfor %}
 				</div>
-				<div id="display_summary" >
+				<div>
 					{% for env_property in env_properties %}
 					{{ env_property.property.name }},
 					{% endfor %}
@@ -137,6 +131,9 @@ Nitrate.TestPlans.Instance = {
 					None
 				{% endif %}
 				</div>
+			</div>
+			<div class="listinfo">
+				<div class="title"><a href="/admin/testplans/testplan/{{ test_plan.pk }}/history/">View Edit History</a></div>
 			</div>
 		</div>
 		<div class="clear"></div>
@@ -170,7 +167,15 @@ Nitrate.TestPlans.Instance = {
 				</li>
 			</ul>
 			<div id="document" class="tab_list" style="display:none">
-				{% include "plan/get_docs.html" %}
+                            <div class="listinfo_doc_content">
+                                <div id="display_summary" class="listinfo_doc">
+                                {% if test_plan.text %}
+                                    {{ test_plan.text|safe }}
+                                {% else %}
+                                    <span style="color: #666">The document for this plan hasn't been written yet.</span>
+                                {% endif %}
+                                </div>
+                            </div>
 			</div>
 			<div id="attachment" class="tab_list" style="display:none">
 				{% include "plan/get_attachments.html" %}

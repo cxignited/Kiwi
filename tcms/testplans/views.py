@@ -80,11 +80,8 @@ def new(request, template_name='plan/new.html'):
                 create_date=datetime.datetime.now(),
                 extra_link=form.cleaned_data['extra_link'],
                 parent=form.cleaned_data['parent'],
+                text=form.cleaned_data['text'],
             )
-
-            # Add test plan text
-            if request.user.has_perm('testplans.add_testplantext'):
-                test_plan.add_text(request.user, form.cleaned_data['text'])
 
             # Add test plan environment groups
             if request.user.has_perm('testplans.add_envplanmap'):
@@ -344,7 +341,6 @@ def get(request, plan_id, slug=None, template_name='plan/get.html'):
 
     try:
         test_plan = TestPlan.objects.select_related().get(plan_id=plan_id)
-        test_plan.latest_text = test_plan.latest_text()
     except ObjectDoesNotExist:
         raise Http404
 
@@ -415,7 +411,7 @@ def choose_run(request, plan_id):
                 if test_case.case_id not in existing_cases:
                     test_run.add_case_run(case=test_case)
 
-            estimated_time = 0
+            estimated_time = datetime.timedelta(0)
             for case in to_be_added_cases:
                 estimated_time += case.estimated_time
 
@@ -461,10 +457,8 @@ def edit(request, plan_id, template_name='plan/edit.html'):
                 # can be accessed.
                 # Instance attribute is usually not a desirable solution.
                 test_plan.current_user = request.user
+                test_plan.text = form.cleaned_data['text']
                 test_plan.save()
-
-            if request.user.has_perm('testplans.add_testplantext'):
-                test_plan.add_text(request.user, form.cleaned_data['text'])
 
             if request.user.has_perm('testplans.change_envplanmap'):
                 test_plan.clear_env_groups()
@@ -494,7 +488,7 @@ def edit(request, plan_id, template_name='plan/edit.html'):
             'product': test_plan.product_id,
             'product_version': test_plan.product_version_id,
             'type': test_plan.type_id,
-            'text': test_plan.latest_text() and test_plan.latest_text().plan_text or '',
+            'text': test_plan.text,
             'parent': test_plan.parent_id,
             'env_group': env_group_id,
             'is_active': test_plan.is_active,
@@ -562,7 +556,6 @@ def clone(request, template_name='plan/clone.html'):
                     set_parent=clone_options['set_parent'],
 
                     # Related data
-                    copy_texts=clone_options['copy_texts'],
                     copy_environment_group=clone_options['copy_environment_group'],
 
                     # Link or copy cases
@@ -587,10 +580,6 @@ def clone(request, template_name='plan/clone.html'):
                 if assign_me_as_copied_case_default_tester:
                     clone_params['new_case_default_tester'] = request.user
 
-                assign_me_as_text_author = not clone_options['copy_texts']
-                if assign_me_as_text_author:
-                    clone_params['default_text_author'] = request.user
-
                 cloned_plan = test_plan.clone(**clone_params)
 
             if len(test_plans) == 1:
@@ -612,7 +601,6 @@ def clone(request, template_name='plan/clone.html'):
                 'product': test_plans[0].product_id,
                 'product_version': test_plans[0].product_version_id,
                 'set_parent': True,
-                'copy_texts': True,
                 'copy_attachements': True,
                 'copy_environment_group': True,
                 'link_testcases': True,
@@ -625,7 +613,6 @@ def clone(request, template_name='plan/clone.html'):
         else:
             clone_form = ClonePlanForm(initial={
                 'set_parent': True,
-                'copy_texts': True,
                 'copy_attachements': True,
                 'link_testcases': True,
                 'copy_testcases': False,
@@ -651,51 +638,48 @@ def attachment(request, plan_id, template_name='plan/attachment.html'):
     return render(request, template_name, context_data)
 
 
-@require_GET
-def text_history(request, plan_id):
-    """View test plan text history"""
-
-    test_plan = get_object_or_404(TestPlan, plan_id=int(plan_id))
-    test_plan_texts = test_plan.text.select_related('author').only('plan',
-                                                                   'create_date',
-                                                                   'plan_text',
-                                                                   'author__email')
-    context_data = {
-        'testplan': test_plan,
-        'test_plan_texts': test_plan_texts,
-        'selected_text_version': int(request.GET.get('id', 0)),
-    }
-    return render(request, 'plan/history.html', context_data)
-
-
 class ReorderCasesView(View):
     """Reorder cases"""
 
     http_method_names = ['post']
 
     def post(self, request, plan_id):
-        # Current we should rewrite all of cases belong to the plan.
-        # Because the cases sortkey in database is chaos,
-        # Most of them are None.
-
         if 'case' not in request.POST:
             return JsonResponse({
                 'rc': 1,
                 'response': 'At least one case is required to re-order.'
             })
 
-        plan = get_object_or_404(TestPlan, pk=int(plan_id))
-
         case_ids = []
         for case_id in request.POST.getlist('case'):
             case_ids.append(int(case_id))
 
-        cases = TestCase.objects.filter(pk__in=case_ids).only('pk')
+        cases = TestCasePlan.objects.filter(case_id__in=case_ids, plan=plan_id).only('case_id')
 
         for case in cases:
-            new_sort_key = (case_ids.index(case.pk) + 1) * 10
-            TestCasePlan.objects.filter(
-                plan=plan, case=case).update(sortkey=new_sort_key)
+            case.sortkey = (case_ids.index(case.case_id) + 1) * 10
+            case.save()
+
+        return JsonResponse({'rc': 0, 'response': 'ok'})
+
+
+@method_decorator(permission_required('testplans.change_testplan'), name='dispatch')
+class UpdateParentView(View):
+    """Updates TestPlan.parent. Called from the front-end."""
+
+    http_method_names = ['post']
+
+    def post(self, request):
+        parent_id = int(request.POST.get('parent_id'))
+        if parent_id == 0:
+            parent_id = None
+
+        child_ids = request.POST.getlist('child_ids[]')
+
+        for child_pk in child_ids:
+            test_plan = get_object_or_404(TestPlan, pk=int(child_pk))
+            test_plan.parent_id = parent_id
+            test_plan.save()
 
         return JsonResponse({'rc': 0, 'response': 'ok'})
 

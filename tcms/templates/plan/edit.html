@@ -11,9 +11,6 @@
 <style>
 #tab_testcases{ padding-left:5px;}
 #tab_testruns {padding-left:5px;}
-.display_summary textarea{
-	background:red;
-}
 </style>
 {% endblock %}
 
@@ -42,13 +39,6 @@ Nitrate.Utils.after_page_load(Nitrate.TestPlans.Edit.on_load);
 		>> Edit
 	</div>
 	<input id="id_plan_id" type="hidden" name="plan_id" value="{{ test_plan.plan_id }}">
-	<div class="control">
-		<span class="right-bar">
-			<a href="{% url "plan-text_history" test_plan.plan_id %}" class="historylink">
-				Edit History
-			</a>
-		</span>
-	</div>
 	<form action="{% url "plan-edit" test_plan.plan_id %}" method="post" enctype="multipart/form-data">
 		<div id="" class="Detailform border-1">
 			<table class="editor" cellspacing="0">
@@ -119,7 +109,7 @@ Nitrate.Utils.after_page_load(Nitrate.TestPlans.Edit.on_load);
 				<tr>
 					<td><label class="lab strong">Plan Document</label></td>
 					<td>
-						<div id="display_summary"  class="mec">
+						<div>
 							{{ form.text }}
 						</div>
                         <div >{{ form.text.errors }}</div>

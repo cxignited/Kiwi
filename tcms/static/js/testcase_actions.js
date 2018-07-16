@@ -552,48 +552,40 @@ function toggleTestCaseContents(template_type, container, content_container, obj
   toggleExpandArrow({ caseRowContainer: jQ(container), expandPaneContainer: jQ(content_container) });
 }
 
-function changeTestCaseStatus(plan_id, selector, case_id, be_confirmed, was_confirmed) {
-  var value = selector.value;
-  var label = jQ(selector).prev()[0];
-
+function changeTestCaseStatus(plan_id, case_id, new_value, container) {
   var success = function(data, textStatus, jqXHR) {
     var returnobj = jQ.parseJSON(jqXHR.responseText);
     if (returnobj.rc !== 0) {
       window.alert(returnobj.response);
       return false;
     }
-    var case_status_id = returnobj.case_status_id;
 
-    for (var i = 0; (node = selector.options[i]); i++) {
-      if (node.selected) {
-        var case_status = node.innerHTML;
-      }
+    var template_type = 'case';
+
+    if (container.attr('id') === 'reviewcases') {
+        template_type = 'review_case';
     }
 
-    // container should be got before selector is hidden.
-    var curCasesContainer = jQ(selector).parents('.tab_list');
+    var parameters = {
+        'a': 'initial',
+        'from_plan': plan_id,
+        'template_type': template_type,
+    };
 
-    jQ(label).html(case_status).show();
-    jQ(selector).hide();
+    constructPlanDetailsCasesZone(container, plan_id, parameters);
 
-    if (be_confirmed || was_confirmed) {
-      jQ('#run_case_count').text(returnobj.run_case_count);
-      jQ('#case_count').text(returnobj.case_count);
-      jQ('#review_case_count').text(returnobj.review_case_count);
-      jQ('#' + case_id).next().remove();
-      jQ('#' + case_id).remove();
+    jQ('#run_case_count').text(returnobj.run_case_count);
+    jQ('#case_count').text(returnobj.case_count);
+    jQ('#review_case_count').text(returnobj.review_case_count);
 
-      // We have to reload the other side of cases to reflect the status
-      // change. This MUST be done before selector is hided.
-      Nitrate.TestPlans.Details.reopenTabHelper(curCasesContainer);
-    }
+    Nitrate.TestPlans.Details.reopenTabHelper(jQ(container));
   };
 
   var data = {
     'from_plan': plan_id,
     'case': case_id,
     'target_field': 'case_status',
-    'new_value': value,
+    'new_value': new_value,
   };
 
   jQ.ajax({
@@ -656,92 +648,6 @@ function blindupAllCases(element) {
       .removeClass('expand-all').addClass('collapse-all')
       .attr('src', '/static/images/t1.gif');
   }
-}
-
-// Deprecated. Remove when it's unusable any more.
-function changeCaseOrder(parameters, callback) {
-  var nsk = '';
-  if (parameters.hasOwnProperty('sortkey')) {
-    nsk = window.prompt('Enter your new order number', parameters['sortkey']);   // New sort key
-    if (nsk == parameters['sortkey']) {
-      window.alert('Nothing changed');
-      return false;
-    }
-  } else {
-    nsk = window.prompt('Enter your new order number');
-  }
-
-  if (!nsk) {
-    return false;
-  }
-
-  if (nsk != window.parseInt(nsk)) {
-    window.alert('The value must be an integer number and limit between 0 to 32300.');
-    return false;
-  }
-
-  if (nsk > 32300 || nsk < 0) {
-    window.alert('The value must be an integer number and limit between 0 to 32300.');
-    return false;
-  }
-  var ctype = 'testcases.testcaseplan';
-  var object_pk = parameters['testcaseplan'];
-  var field = 'sortkey';
-  var value = nsk;
-  var vtype = 'int';
-
-  updateObject(ctype, object_pk, field, value, vtype, callback);
-}
-
-function changeCaseOrder2(parameters, callback) {
-  var nsk = '';
-  if (parameters.hasOwnProperty('sortkey')) {
-    nsk = window.prompt('Enter your new order number', parameters['sortkey']);   // New sort key
-    if (nsk == parameters['sortkey']) {
-      window.alert('Nothing changed');
-      return false;
-    }
-  } else {
-    nsk = window.prompt('Enter your new order number');
-  }
-
-  if (!nsk) {
-    return false;
-  }
-
-  if (nsk != window.parseInt(nsk)) {
-    window.alert('The value must be an integer number and limit between 0 to 32300.');
-    return false;
-  }
-
-  if (nsk > 32300 || nsk < 0) {
-    window.alert('The value must be an integer number and limit between 0 to 32300.');
-    return false;
-  }
-
-  parameters.target_field = 'sortkey';
-  parameters.new_value = nsk;
-
-  jQ.ajax({
-    'url': '/ajax/update/cases-sortkey/',
-    'type': 'POST',
-    'data': parameters,
-    'traditional': true,
-    'success': function (data, textStatus, jqXHR) {
-      callback(jqXHR);
-    },
-    'error': function (jqXHR, textStatus, errorThrown) {
-      json_failure(jqXHR);
-    }
-  });
-}
-
-// Deprecated. dead code.
-function changeCasePriority(object_pk, value, callback) {
-  var ctype = 'testcases.testcase';
-  var field = 'priority';
-  var vtype = 'int';
-  updateObject(ctype, object_pk, field, value, vtype, callback);
 }
 
 function addCaseBug(form, callback) {
@@ -857,8 +763,8 @@ function constructPlanCaseZone(container, case_id, parameters) {
         return false;
       }
 
-      var url = Nitrate.http.URLConf.reverse({ name: 'case_plan', arguments: {id: case_id} });
-      previewPlan(p, url, callback);
+      var action_url = Nitrate.http.URLConf.reverse({ name: 'case_plan', arguments: {id: case_id} });
+      previewPlan(p, action_url, callback);
     });
     if (jQ('#testplans_table td a').length) {
       jQ('#testplans_table').dataTable({
