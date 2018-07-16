@@ -56,3 +56,6 @@ def create(values, **kwargs):
     if not new_env_group:
         raise ValueError('The env group "{}"'
                          ' already exists'.format(values['name']))
+
+    result = new_env_group.serialize()
+    return result
